@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Basic scatterplot — Cinderplot Gallery</title>
+<style>
+  :root {
+    --ink: #1c2530; --muted: #5a6672; --line: #e3e8ee;
+    --bg: #ffffff; --card: #f7f9fb; --accent: #2a9d8f; --code-bg: #1c2530;
+    --code-ink: #e6edf3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px 80px; }
+  header.site {
+    border-bottom: 1px solid var(--line); padding: 18px 0; margin-bottom: 8px;
+  }
+  header.site .wrap { padding-bottom: 0; padding-top: 0; display: flex; align-items: baseline; gap: 12px; }
+  .brand { font-weight: 700; letter-spacing: -.01em; }
+  .brand .spark { color: var(--accent); }
+  nav.crumb { color: var(--muted); font-size: 14px; margin: 22px 0 0; }
+  nav.crumb a { color: var(--muted); text-decoration: none; }
+  nav.crumb a:hover { color: var(--accent); }
+  h1 { font-size: 34px; letter-spacing: -.02em; margin: 10px 0 6px; }
+  .lede { color: var(--muted); font-size: 18px; margin: 0 0 28px; max-width: 68ch; }
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 8px 0 26px;
+  }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+  .panel {
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--card);
+  }
+  .panel .cap {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    font-size: 13px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
+    color: var(--muted); background: #fff;
+  }
+  .panel .cap .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .panel .fig { background: #fff; display: flex; justify-content: center; padding: 10px; }
+  .panel .fig img { width: 100%; height: auto; max-width: 440px; display: block; }
+  .tag {
+    display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; margin-left: auto;
+    color: var(--accent); background: rgba(42,157,143,.1);
+  }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+       margin: 30px 0 10px; }
+  pre {
+    background: var(--code-bg); color: var(--code-ink); border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.55;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 0 0 18px;
+  }
+  pre .c { color: #8b98a5; }
+  pre .k { color: #7ee0c8; }
+  .note {
+    border-left: 3px solid var(--accent); background: var(--card);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; color: var(--ink); margin: 6px 0 0;
+  }
+  .note strong { color: var(--accent); }
+  footer { color: var(--muted); font-size: 14px; border-top: 1px solid var(--line);
+           margin-top: 40px; padding-top: 18px; }
+</style>
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <span class="brand">Cinder<span class="spark">plot</span></span>
+    <span style="color:var(--muted);font-size:14px">gallery</span>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="crumb"><a href="index.html">Gallery</a> &rsaquo; Scatterplot</nav>
+  <h1>Basic scatterplot</h1>
+  <p class="lede">
+    The most basic scatterplot: one mark per observation, weight against fuel economy
+    from the <code>mtcars</code> dataset. On the left, the R&nbsp;+&nbsp;ggplot2 original;
+    on the right, the same figure drawn by cinderplot — no R session, one command, vector SVG.
+  </p>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="cap"><span class="dot"></span> ggplot2 &middot; R</div>
+      <div class="fig"><img src="scatter/ggplot.png" alt="ggplot2 scatterplot of mtcars wt vs mpg"></div>
+    </div>
+    <div class="panel">
+      <div class="cap"><span class="dot"></span> cinderplot <span class="tag">SVG</span></div>
+      <div class="fig"><img src="scatter/cinderplot.svg" alt="cinderplot scatterplot of mtcars wt vs mpg"></div>
+    </div>
+  </div>
+
+  <h2>The ggplot2 way</h2>
+  <pre><span class="c"># R</span>
+<span class="k">library</span>(ggplot2)
+ggplot(mtcars, aes(x = wt, y = mpg)) + geom_point()</pre>
+
+  <h2>The cinderplot way</h2>
+  <pre><span class="c"># shell — no R needed</span>
+cinderplot data/mtcars.csv -x wt -y mpg -o scatter.svg
+
+<span class="c"># or the grammar form</span>
+cinderplot <span class="k">'data/mtcars.csv + aes(wt, mpg) + geom_point()'</span> -o scatter.svg</pre>
+
+  <div class="note">
+    <strong>Same figure, no R.</strong> cinderplot reproduces ggplot2's <code>theme_gray</code>
+    faithfully — panel fill, gridlines, axis breaks, and point geometry — from a single
+    C&nbsp;binary that reads the CSV and writes a PDF or SVG in milliseconds.
+  </div>
+
+  <footer>
+    Data: <code>data/mtcars.csv</code> &middot; reference rendered with
+    <code>gallery/scatter/gen.R</code>. Part of
+    <a href="https://github.com/zhou-lab/cinderplot" style="color:var(--accent)">cinderplot</a>.
+  </footer>
+</div>
+</body>
+</html>

@@ -1,2 +1,6 @@
 *.pdf
 *.png
+
+# gallery figures are committed (served); intermediates stay ignored
+!gallery/**/*.png
+!gallery/**/*.svg
