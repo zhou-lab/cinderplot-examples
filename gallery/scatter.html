@@ -6,117 +6,140 @@
 <title>Basic scatterplot — Cinderplot Gallery</title>
 <style>
   :root {
-    --ink: #1c2530; --muted: #5a6672; --line: #e3e8ee;
-    --bg: #ffffff; --card: #f7f9fb; --accent: #2a9d8f; --code-bg: #1c2530;
-    --code-ink: #e6edf3;
+    --ground:#FBFAF8; --card:#F4F0EA; --ink:#221D1A; --muted:#6E645D;
+    --line:#E7E1D9; --ember:#D6532A; --ember-soft:rgba(214,83,42,.12);
+    --code-bg:#221D1A; --code-ink:#EFE9E2; --code-dim:#9A8E85; --code-em:#EBA277;
+    --sans: system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+    --mono: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#16120F; --card:#201A16; --ink:#F1EBE3; --muted:#A89C93;
+      --line:#302822; --ember:#F0693B; --ember-soft:rgba(240,105,59,.16);
+      --code-bg:#0F0C0A; --code-ink:#EFE9E2; --code-dim:#8A7E75; --code-em:#EBA277;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#FBFAF8; --card:#F4F0EA; --ink:#221D1A; --muted:#6E645D;
+    --line:#E7E1D9; --ember:#D6532A; --ember-soft:rgba(214,83,42,.12);
+    --code-bg:#221D1A; --code-ink:#EFE9E2; --code-dim:#9A8E85; --code-em:#EBA277;
+  }
+  :root[data-theme="dark"] {
+    --ground:#16120F; --card:#201A16; --ink:#F1EBE3; --muted:#A89C93;
+    --line:#302822; --ember:#F0693B; --ember-soft:rgba(240,105,59,.16);
+    --code-bg:#0F0C0A; --code-ink:#EFE9E2; --code-dim:#8A7E75; --code-em:#EBA277;
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  }
-  .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px 80px; }
-  header.site {
-    border-bottom: 1px solid var(--line); padding: 18px 0; margin-bottom: 8px;
-  }
-  header.site .wrap { padding-bottom: 0; padding-top: 0; display: flex; align-items: baseline; gap: 12px; }
-  .brand { font-weight: 700; letter-spacing: -.01em; }
-  .brand .spark { color: var(--accent); }
-  nav.crumb { color: var(--muted); font-size: 14px; margin: 22px 0 0; }
-  nav.crumb a { color: var(--muted); text-decoration: none; }
-  nav.crumb a:hover { color: var(--accent); }
-  h1 { font-size: 34px; letter-spacing: -.02em; margin: 10px 0 6px; }
-  .lede { color: var(--muted); font-size: 18px; margin: 0 0 28px; max-width: 68ch; }
-  .compare {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 8px 0 26px;
-  }
-  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
-  .panel {
-    border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--card);
-  }
-  .panel .cap {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 14px; border-bottom: 1px solid var(--line);
-    font-size: 13px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
-    color: var(--muted); background: #fff;
-  }
-  .panel .cap .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-  .panel .fig { background: #fff; display: flex; justify-content: center; padding: 10px; }
-  .panel .fig img { width: 100%; height: auto; max-width: 440px; display: block; }
-  .tag {
-    display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; margin-left: auto;
-    color: var(--accent); background: rgba(42,157,143,.1);
-  }
-  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
-       margin: 30px 0 10px; }
-  pre {
-    background: var(--code-bg); color: var(--code-ink); border-radius: 10px;
-    padding: 14px 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.55;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 0 0 18px;
-  }
-  pre .c { color: #8b98a5; }
-  pre .k { color: #7ee0c8; }
-  .note {
-    border-left: 3px solid var(--accent); background: var(--card);
-    padding: 12px 16px; border-radius: 0 8px 8px 0; color: var(--ink); margin: 6px 0 0;
-  }
-  .note strong { color: var(--accent); }
-  footer { color: var(--muted); font-size: 14px; border-top: 1px solid var(--line);
-           margin-top: 40px; padding-top: 18px; }
+  body { margin:0; background:var(--ground); color:var(--ink); font-family:var(--sans);
+         font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:940px; margin:0 auto; padding:0 24px; }
+  header.site { border-bottom:1px solid var(--line); }
+  header.site .wrap { display:flex; align-items:center; gap:10px; height:56px; }
+  .mark { font-family:var(--mono); font-weight:600; font-size:15px; letter-spacing:-.01em;
+          display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .ember { width:10px; height:10px; border-radius:2px; background:var(--ember);
+           box-shadow:0 0 10px var(--ember); }
+  .mark .sub { color:var(--muted); font-weight:400; }
+  main { padding:44px 0 96px; }
+  .eyebrow { font-family:var(--mono); font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+             color:var(--ember); margin:0 0 14px; }
+  .eyebrow a { color:var(--muted); text-decoration:none; }
+  .eyebrow a:hover { color:var(--ember); }
+  h1 { font-size:38px; line-height:1.08; letter-spacing:-.025em; margin:0 0 14px;
+       text-wrap:balance; }
+  .lede { color:var(--muted); font-size:19px; line-height:1.5; margin:0 0 36px; max-width:64ch; }
+  .lede b { color:var(--ink); font-weight:600; }
+  .compare { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:0 0 44px; }
+  @media (max-width:720px){ .compare{ grid-template-columns:1fr; } }
+  .panel { border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--card);
+           transition:border-color .2s ease, transform .2s ease; }
+  .panel:hover { border-color:var(--ember); transform:translateY(-2px); }
+  .panel .cap { display:flex; align-items:center; gap:9px; padding:11px 15px;
+                border-bottom:1px solid var(--line); font-family:var(--mono); font-size:12px;
+                letter-spacing:.04em; color:var(--muted); background:var(--ground); }
+  .panel .cap b { color:var(--ink); font-weight:600; }
+  .panel .cap .badge { margin-left:auto; color:var(--ember); background:var(--ember-soft);
+                       padding:2px 8px; border-radius:999px; font-size:11px; letter-spacing:.06em; }
+  .panel .fig { background:#fff; padding:12px; display:flex; justify-content:center; }
+  .panel .fig img { width:100%; height:auto; max-width:440px; display:block; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:0 0 36px; }
+  @media (max-width:720px){ .cols{ grid-template-columns:1fr; } }
+  h2 { font-family:var(--mono); font-size:13px; text-transform:uppercase; letter-spacing:.08em;
+       color:var(--muted); margin:0 0 10px; font-weight:600; }
+  h2 .n { color:var(--ember); }
+  pre { background:var(--code-bg); color:var(--code-ink); border-radius:11px; padding:16px 18px;
+        overflow-x:auto; font-family:var(--mono); font-size:13.5px; line-height:1.6; margin:0; }
+  pre .c { color:var(--code-dim); }
+  pre .k { color:var(--code-em); }
+  .note { border-left:3px solid var(--ember); background:var(--card); padding:14px 18px;
+          border-radius:0 10px 10px 0; color:var(--ink); }
+  .note b { color:var(--ember); }
+  footer { color:var(--muted); font-family:var(--mono); font-size:12.5px; border-top:1px solid var(--line);
+           margin-top:48px; padding-top:20px; }
+  footer a { color:var(--ember); text-decoration:none; }
+  a:focus-visible, .panel:focus-visible { outline:2px solid var(--ember); outline-offset:3px; }
+  @media (prefers-reduced-motion: reduce){ .panel{ transition:none; } .panel:hover{ transform:none; } }
 </style>
 </head>
 <body>
 <header class="site">
   <div class="wrap">
-    <span class="brand">Cinder<span class="spark">plot</span></span>
-    <span style="color:var(--muted);font-size:14px">gallery</span>
+    <span class="mark"><span class="ember"></span>cinderplot <span class="sub">/ gallery</span></span>
   </div>
 </header>
 
-<div class="wrap">
-  <nav class="crumb"><a href="index.html">Gallery</a> &rsaquo; Scatterplot</nav>
-  <h1>Basic scatterplot</h1>
-  <p class="lede">
-    The most basic scatterplot: one mark per observation, weight against fuel economy
-    from the <code>mtcars</code> dataset. On the left, the R&nbsp;+&nbsp;ggplot2 original;
-    on the right, the same figure drawn by cinderplot — no R session, one command, vector SVG.
-  </p>
+<main>
+  <div class="wrap">
+    <p class="eyebrow"><a href="index.html">Gallery</a> &nbsp;›&nbsp; Scatterplot</p>
+    <h1>Basic scatterplot</h1>
+    <p class="lede">
+      One mark per observation — car weight against fuel economy, the <code>mtcars</code> dataset.
+      Left is the R&nbsp;+&nbsp;ggplot2 original; right is the same figure from <b>cinderplot</b>:
+      no R session, one command, vector&nbsp;SVG out.
+    </p>
 
-  <div class="compare">
-    <div class="panel">
-      <div class="cap"><span class="dot"></span> ggplot2 &middot; R</div>
-      <div class="fig"><img src="scatter/ggplot.png" alt="ggplot2 scatterplot of mtcars wt vs mpg"></div>
+    <div class="compare">
+      <div class="panel">
+        <div class="cap"><b>ggplot2</b> · R <span class="badge">reference</span></div>
+        <div class="fig"><img src="scatter/ggplot.png" alt="ggplot2 scatterplot of mtcars weight versus mpg"></div>
+      </div>
+      <div class="panel">
+        <div class="cap"><b>cinderplot</b> · C <span class="badge">svg</span></div>
+        <div class="fig"><img src="scatter/cinderplot.svg" alt="cinderplot scatterplot of mtcars weight versus mpg"></div>
+      </div>
     </div>
-    <div class="panel">
-      <div class="cap"><span class="dot"></span> cinderplot <span class="tag">SVG</span></div>
-      <div class="fig"><img src="scatter/cinderplot.svg" alt="cinderplot scatterplot of mtcars wt vs mpg"></div>
-    </div>
-  </div>
 
-  <h2>The ggplot2 way</h2>
-  <pre><span class="c"># R</span>
+    <div class="cols">
+      <div>
+        <h2><span class="n">R</span> — the ggplot2 way</h2>
+        <pre><span class="c"># needs an R session</span>
 <span class="k">library</span>(ggplot2)
-ggplot(mtcars, aes(x = wt, y = mpg)) + geom_point()</pre>
+ggplot(mtcars,
+       aes(x = wt, y = mpg)) +
+  geom_point()</pre>
+      </div>
+      <div>
+        <h2><span class="n">$</span> — the cinderplot way</h2>
+        <pre><span class="c"># one C binary, no R</span>
+cinderplot data/mtcars.csv \
+  -x wt -y mpg -o scatter.svg
 
-  <h2>The cinderplot way</h2>
-  <pre><span class="c"># shell — no R needed</span>
-cinderplot data/mtcars.csv -x wt -y mpg -o scatter.svg
+<span class="c"># …or the grammar form</span>
+cinderplot <span class="k">'data/mtcars.csv
+  + aes(wt, mpg) + geom_point()'</span></pre>
+      </div>
+    </div>
 
-<span class="c"># or the grammar form</span>
-cinderplot <span class="k">'data/mtcars.csv + aes(wt, mpg) + geom_point()'</span> -o scatter.svg</pre>
+    <div class="note">
+      <b>Same figure, no R.</b> cinderplot reproduces ggplot2's <code>theme_gray</code> faithfully —
+      panel fill, gridlines, axis breaks, and point geometry — from a single C binary that reads the
+      CSV and writes PDF or SVG in milliseconds.
+    </div>
 
-  <div class="note">
-    <strong>Same figure, no R.</strong> cinderplot reproduces ggplot2's <code>theme_gray</code>
-    faithfully — panel fill, gridlines, axis breaks, and point geometry — from a single
-    C&nbsp;binary that reads the CSV and writes a PDF or SVG in milliseconds.
+    <footer>
+      data: mtcars.csv&nbsp; · &nbsp;reference: gallery/scatter/gen.R&nbsp; · &nbsp;<a href="https://github.com/zhou-lab/cinderplot">github.com/zhou-lab/cinderplot</a>
+    </footer>
   </div>
-
-  <footer>
-    Data: <code>data/mtcars.csv</code> &middot; reference rendered with
-    <code>gallery/scatter/gen.R</code>. Part of
-    <a href="https://github.com/zhou-lab/cinderplot" style="color:var(--accent)">cinderplot</a>.
-  </footer>
-</div>
+</main>
 </body>
 </html>
