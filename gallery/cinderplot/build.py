@@ -20,6 +20,9 @@ VARIANTS = [
     ("basic", "Basic",
      "data/mtcars.csv + aes(wt, mpg) + geom_point()",
      "ggplot(mtcars, aes(wt, mpg)) + geom_point()"),
+    ("custom", "Custom colour",
+     'data/mtcars.csv + aes(wt, mpg) + geom_point(color="#69b3a2")',
+     'ggplot(mtcars, aes(wt, mpg)) + geom_point(color = "#69b3a2")'),
     ("group-cyl", "Colour by group",
      "data/mtcars.csv + aes(wt, mpg, colour=factor(cyl)) + geom_point()",
      "ggplot(mtcars, aes(wt, mpg, colour = factor(cyl))) + geom_point()"),
@@ -38,9 +41,6 @@ VARIANTS = [
     ("iris-petal", "Iris · petals",
      "data/iris.csv + aes(Petal.Length, Petal.Width, colour=Species) + geom_point()",
      "ggplot(iris, aes(Petal.Length, Petal.Width, colour = Species)) + geom_point()"),
-    ("iris-cross", "Iris · sepal vs petal",
-     "data/iris.csv + aes(Sepal.Length, Petal.Length, colour=Species) + geom_point()",
-     "ggplot(iris, aes(Sepal.Length, Petal.Length, colour = Species)) + geom_point()"),
 ]
 
 def render():

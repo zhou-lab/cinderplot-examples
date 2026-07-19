@@ -111,6 +111,22 @@ ggplot(mtcars, aes(wt, mpg)) + geom_point()</pre>
         <figcaption>Basic</figcaption>
       </figure>
       <figure class="card">
+        <div class="stage" tabindex="0" aria-label="Custom colour scatterplot; hover or focus for code">
+          <img data-v="cp" src="cinderplot/figs/custom-cp.svg" alt="Custom colour — cinderplot">
+          <img data-v="r" src="cinderplot/figs/custom-gg.png" alt="Custom colour — ggplot2" hidden>
+          <div class="overlay">
+            <pre data-v="cp"><span class="c"># cinderplot</span>
+cinderplot &#x27;data/mtcars.csv
+  + aes(wt, mpg)
+  + geom_point(color=&quot;#69b3a2&quot;)&#x27; \
+  -o out.svg</pre>
+            <pre data-v="r"><span class="c"># R + ggplot2</span>
+ggplot(mtcars, aes(wt, mpg)) + geom_point(color = &quot;#69b3a2&quot;)</pre>
+          </div>
+        </div>
+        <figcaption>Custom colour</figcaption>
+      </figure>
+      <figure class="card">
         <div class="stage" tabindex="0" aria-label="Colour by group scatterplot; hover or focus for code">
           <img data-v="cp" src="cinderplot/figs/group-cyl-cp.svg" alt="Colour by group — cinderplot">
           <img data-v="r" src="cinderplot/figs/group-cyl-gg.png" alt="Colour by group — ggplot2" hidden>
@@ -208,22 +224,6 @@ ggplot(iris, aes(Petal.Length, Petal.Width, colour = Species)) + geom_point()</p
           </div>
         </div>
         <figcaption>Iris · petals</figcaption>
-      </figure>
-      <figure class="card">
-        <div class="stage" tabindex="0" aria-label="Iris · sepal vs petal scatterplot; hover or focus for code">
-          <img data-v="cp" src="cinderplot/figs/iris-cross-cp.svg" alt="Iris · sepal vs petal — cinderplot">
-          <img data-v="r" src="cinderplot/figs/iris-cross-gg.png" alt="Iris · sepal vs petal — ggplot2" hidden>
-          <div class="overlay">
-            <pre data-v="cp"><span class="c"># cinderplot</span>
-cinderplot &#x27;data/iris.csv
-  + aes(Sepal.Length, Petal.Length, colour=Species)
-  + geom_point()&#x27; \
-  -o out.svg</pre>
-            <pre data-v="r"><span class="c"># R + ggplot2</span>
-ggplot(iris, aes(Sepal.Length, Petal.Length, colour = Species)) + geom_point()</pre>
-          </div>
-        </div>
-        <figcaption>Iris · sepal vs petal</figcaption>
       </figure>
     </div>
     <div class="note"><b>Same figures, no R.</b> cinderplot reproduces ggplot2's <code>theme_gray</code> —

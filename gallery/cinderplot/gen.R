@@ -1,6 +1,7 @@
 suppressMessages(library(ggplot2))
 iris <- read.csv('data/iris.csv'); mtcars <- read.csv('data/mtcars.csv')
 ggsave('gallery/cinderplot/figs/basic-gg.pdf', ggplot(mtcars, aes(wt, mpg)) + geom_point(), width=6, height=4)
+ggsave('gallery/cinderplot/figs/custom-gg.pdf', ggplot(mtcars, aes(wt, mpg)) + geom_point(color = "#69b3a2"), width=6, height=4)
 ggsave('gallery/cinderplot/figs/group-cyl-gg.pdf', ggplot(mtcars, aes(wt, mpg, colour = factor(cyl))) + geom_point(), width=6, height=4)
 ggsave('gallery/cinderplot/figs/group-gear-gg.pdf', ggplot(mtcars, aes(hp, mpg, colour = factor(gear))) + geom_point(), width=6, height=4)
 ggsave('gallery/cinderplot/figs/continuous-gg.pdf', ggplot(mtcars, aes(wt, mpg, colour = hp)) + geom_point() +
@@ -8,4 +9,3 @@ ggsave('gallery/cinderplot/figs/continuous-gg.pdf', ggplot(mtcars, aes(wt, mpg, 
 ggsave('gallery/cinderplot/figs/logx-gg.pdf', ggplot(mtcars, aes(hp, mpg)) + geom_point() + scale_x_log10(), width=6, height=4)
 ggsave('gallery/cinderplot/figs/iris-sepal-gg.pdf', ggplot(iris, aes(Sepal.Length, Sepal.Width, colour = Species)) + geom_point(), width=6, height=4)
 ggsave('gallery/cinderplot/figs/iris-petal-gg.pdf', ggplot(iris, aes(Petal.Length, Petal.Width, colour = Species)) + geom_point(), width=6, height=4)
-ggsave('gallery/cinderplot/figs/iris-cross-gg.pdf', ggplot(iris, aes(Sepal.Length, Petal.Length, colour = Species)) + geom_point(), width=6, height=4)
