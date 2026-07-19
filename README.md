@@ -4,9 +4,16 @@ Example datasets and the regression test suite for
 [cinderplot](https://github.com/zhou-lab/cinderplot). Kept out of the code
 repository so that stays small and buildable; the data lives here.
 
-The documentation site and gallery now live in the code repo under `docs/`
-(published to GitHub Pages). Its build script reads the datasets here from a
-sibling checkout — see `docs/build.py` in the cinderplot repo.
+The documentation site and gallery HTML live in the code repo under `docs/`
+(published to GitHub Pages at `zhou-lab.github.io/cinderplot/`). Its build
+script reads the datasets here from a sibling checkout — see `docs/build.py` in
+the cinderplot repo.
+
+The **rendered gallery figures** are served from *this* repo's Pages site to
+keep the code repo free of growing binary assets: `docs/figs/*.svg` (cinderplot)
+and `docs/figs/*.png` (ggplot2 reference), published at
+`zhou-lab.github.io/cinderplot-examples/figs/…` and linked by the gallery.
+Enable it under *Settings → Pages → Deploy from a branch → `main` / `docs`*.
 
 ## Layout
 
