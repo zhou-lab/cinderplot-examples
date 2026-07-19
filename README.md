@@ -1,8 +1,12 @@
 # cinderplot-examples
 
-Example datasets, demo figures, and the regression test suite for
+Example datasets and the regression test suite for
 [cinderplot](https://github.com/zhou-lab/cinderplot). Kept out of the code
 repository so that stays small and buildable; the data lives here.
+
+The documentation site and gallery now live in the code repo under `docs/`
+(published to GitHub Pages). Its build script reads the datasets here from a
+sibling checkout — see `docs/build.py` in the cinderplot repo.
 
 ## Layout
 

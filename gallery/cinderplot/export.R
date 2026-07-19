@@ -1,5 +1,0 @@
-suppressMessages(library(ggplot2))
-write.csv(faithful, 'data/faithful.csv', row.names=FALSE)
-write.csv(cars, 'data/cars.csv', row.names=FALSE)
-write.csv(quakes, 'data/quakes.csv', row.names=FALSE)
-write.csv({set.seed(42); diamonds[sample(nrow(diamonds), 2000), ]}, 'data/diamonds_sample.csv', row.names=FALSE)
