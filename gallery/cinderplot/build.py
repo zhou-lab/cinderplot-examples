@@ -41,13 +41,45 @@ VARIANTS = [
     ("iris-petal", "Iris · petals",
      "data/iris.csv + aes(Petal.Length, Petal.Width, colour=Species) + geom_point()",
      "ggplot(iris, aes(Petal.Length, Petal.Width, colour = Species)) + geom_point()"),
+    ("faithful", "Old Faithful",
+     "data/faithful.csv + aes(waiting, eruptions) + geom_point()",
+     "ggplot(faithful, aes(waiting, eruptions)) + geom_point()"),
+    ("quakes", "Fiji earthquakes",
+     'data/quakes.csv + aes(long, lat, colour=mag) + geom_point() + scale_colour_gradient(low="#132b43", high="#56b1f7")',
+     'ggplot(quakes, aes(long, lat, colour = mag)) + geom_point() +\n  scale_colour_gradient(low = "#132b43", high = "#56b1f7")'),
+    ("diamonds", "Diamonds (2k sample)",
+     "data/diamonds_sample.csv + aes(carat, price, colour=cut) + geom_point()",
+     "# diamonds, a 2000-row sample\nggplot(diamonds, aes(carat, price, colour = cut)) + geom_point()"),
+    ("cars", "Cars: speed vs dist",
+     "data/cars.csv + aes(speed, dist) + geom_point()",
+     "ggplot(cars, aes(speed, dist)) + geom_point()"),
+]
+
+# R datasets to export to data/ so cinderplot and ggplot read identical rows.
+# varname (used in the ggplot code), csv path, R expression (None = already exists)
+DATASETS = [
+    ("mtcars",   "data/mtcars.csv",          None),
+    ("iris",     "data/iris.csv",            None),
+    ("faithful", "data/faithful.csv",        "faithful"),
+    ("cars",     "data/cars.csv",            "cars"),
+    ("quakes",   "data/quakes.csv",          "quakes"),
+    ("diamonds", "data/diamonds_sample.csv", "{set.seed(42); diamonds[sample(nrow(diamonds), 2000), ]}"),
 ]
 
 def render():
     FIGS.mkdir(parents=True, exist_ok=True)
+    # 0. export any missing R datasets to data/ (so both renderers read the same rows)
+    exp = ["suppressMessages(library(ggplot2))"]
+    for _v, csv, expr in DATASETS:
+        if expr and not (ROOT / csv).exists():
+            exp.append(f"write.csv({expr}, '{csv}', row.names=FALSE)")
+    (ROOT / "gallery/cinderplot/export.R").write_text("\n".join(exp) + "\n")
+    subprocess.run(["Rscript", "gallery/cinderplot/export.R"], cwd=ROOT, check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # 1. ggplot references via one R script (pdf device; no cairo/X11 needed)
-    r = ["suppressMessages(library(ggplot2))",
-         "iris <- read.csv('data/iris.csv'); mtcars <- read.csv('data/mtcars.csv')"]
+    r = ["suppressMessages(library(ggplot2))"]
+    for var, csv, _e in DATASETS:
+        r.append(f"{var} <- read.csv('{csv}')")
     for slug, _t, _cp, rc in VARIANTS:
         r.append(f"ggsave('gallery/cinderplot/figs/{slug}-gg.pdf', {rc}, width=6, height=4)")
     (ROOT / "gallery/cinderplot/gen.R").write_text("\n".join(r) + "\n")
@@ -197,7 +229,8 @@ __CARDS__
 </script>"""
 
 def build_html():
-    n_words = {8:"eight",7:"seven",6:"six",5:"five"}.get(len(VARIANTS), str(len(VARIANTS)))
+    n_words = {5:"five",6:"six",7:"seven",8:"eight",9:"nine",10:"ten",
+               11:"eleven",12:"a dozen"}.get(len(VARIANTS), str(len(VARIANTS)))
     body = BODY.replace("__N__", n_words)
     # hosted page: relative asset paths
     page = ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"

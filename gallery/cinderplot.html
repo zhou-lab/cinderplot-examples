@@ -82,7 +82,7 @@
     <p class="eyebrow">Gallery › Scatterplot</p>
     <h1>Scatterplot</h1>
     <p class="lede">
-      The scatterplot, drawn eight ways — grouped, coloured, log-scaled, across datasets. Every figure is
+      The scatterplot, drawn a dozen ways — grouped, coloured, log-scaled, across datasets. Every figure is
       rendered by <b>cinderplot</b> straight from a CSV, no R at plot time. <b>Hover any plot for the command;</b>
       flip the toggle to see the R original it reproduces.
     </p>
@@ -224,6 +224,73 @@ ggplot(iris, aes(Petal.Length, Petal.Width, colour = Species)) + geom_point()</p
           </div>
         </div>
         <figcaption>Iris · petals</figcaption>
+      </figure>
+      <figure class="card">
+        <div class="stage" tabindex="0" aria-label="Old Faithful scatterplot; hover or focus for code">
+          <img data-v="cp" src="cinderplot/figs/faithful-cp.svg" alt="Old Faithful — cinderplot">
+          <img data-v="r" src="cinderplot/figs/faithful-gg.png" alt="Old Faithful — ggplot2" hidden>
+          <div class="overlay">
+            <pre data-v="cp"><span class="c"># cinderplot</span>
+cinderplot &#x27;data/faithful.csv
+  + aes(waiting, eruptions)
+  + geom_point()&#x27; \
+  -o out.svg</pre>
+            <pre data-v="r"><span class="c"># R + ggplot2</span>
+ggplot(faithful, aes(waiting, eruptions)) + geom_point()</pre>
+          </div>
+        </div>
+        <figcaption>Old Faithful</figcaption>
+      </figure>
+      <figure class="card">
+        <div class="stage" tabindex="0" aria-label="Fiji earthquakes scatterplot; hover or focus for code">
+          <img data-v="cp" src="cinderplot/figs/quakes-cp.svg" alt="Fiji earthquakes — cinderplot">
+          <img data-v="r" src="cinderplot/figs/quakes-gg.png" alt="Fiji earthquakes — ggplot2" hidden>
+          <div class="overlay">
+            <pre data-v="cp"><span class="c"># cinderplot</span>
+cinderplot &#x27;data/quakes.csv
+  + aes(long, lat, colour=mag)
+  + geom_point()
+  + scale_colour_gradient(low=&quot;#132b43&quot;, high=&quot;#56b1f7&quot;)&#x27; \
+  -o out.svg</pre>
+            <pre data-v="r"><span class="c"># R + ggplot2</span>
+ggplot(quakes, aes(long, lat, colour = mag)) + geom_point() +
+  scale_colour_gradient(low = &quot;#132b43&quot;, high = &quot;#56b1f7&quot;)</pre>
+          </div>
+        </div>
+        <figcaption>Fiji earthquakes</figcaption>
+      </figure>
+      <figure class="card">
+        <div class="stage" tabindex="0" aria-label="Diamonds (2k sample) scatterplot; hover or focus for code">
+          <img data-v="cp" src="cinderplot/figs/diamonds-cp.svg" alt="Diamonds (2k sample) — cinderplot">
+          <img data-v="r" src="cinderplot/figs/diamonds-gg.png" alt="Diamonds (2k sample) — ggplot2" hidden>
+          <div class="overlay">
+            <pre data-v="cp"><span class="c"># cinderplot</span>
+cinderplot &#x27;data/diamonds_sample.csv
+  + aes(carat, price, colour=cut)
+  + geom_point()&#x27; \
+  -o out.svg</pre>
+            <pre data-v="r"><span class="c"># R + ggplot2</span>
+# diamonds, a 2000-row sample
+ggplot(diamonds, aes(carat, price, colour = cut)) + geom_point()</pre>
+          </div>
+        </div>
+        <figcaption>Diamonds (2k sample)</figcaption>
+      </figure>
+      <figure class="card">
+        <div class="stage" tabindex="0" aria-label="Cars: speed vs dist scatterplot; hover or focus for code">
+          <img data-v="cp" src="cinderplot/figs/cars-cp.svg" alt="Cars: speed vs dist — cinderplot">
+          <img data-v="r" src="cinderplot/figs/cars-gg.png" alt="Cars: speed vs dist — ggplot2" hidden>
+          <div class="overlay">
+            <pre data-v="cp"><span class="c"># cinderplot</span>
+cinderplot &#x27;data/cars.csv
+  + aes(speed, dist)
+  + geom_point()&#x27; \
+  -o out.svg</pre>
+            <pre data-v="r"><span class="c"># R + ggplot2</span>
+ggplot(cars, aes(speed, dist)) + geom_point()</pre>
+          </div>
+        </div>
+        <figcaption>Cars: speed vs dist</figcaption>
       </figure>
     </div>
     <div class="note"><b>Same figures, no R.</b> cinderplot reproduces ggplot2's <code>theme_gray</code> —

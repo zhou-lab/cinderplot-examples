@@ -1,5 +1,10 @@
 suppressMessages(library(ggplot2))
-iris <- read.csv('data/iris.csv'); mtcars <- read.csv('data/mtcars.csv')
+mtcars <- read.csv('data/mtcars.csv')
+iris <- read.csv('data/iris.csv')
+faithful <- read.csv('data/faithful.csv')
+cars <- read.csv('data/cars.csv')
+quakes <- read.csv('data/quakes.csv')
+diamonds <- read.csv('data/diamonds_sample.csv')
 ggsave('gallery/cinderplot/figs/basic-gg.pdf', ggplot(mtcars, aes(wt, mpg)) + geom_point(), width=6, height=4)
 ggsave('gallery/cinderplot/figs/custom-gg.pdf', ggplot(mtcars, aes(wt, mpg)) + geom_point(color = "#69b3a2"), width=6, height=4)
 ggsave('gallery/cinderplot/figs/group-cyl-gg.pdf', ggplot(mtcars, aes(wt, mpg, colour = factor(cyl))) + geom_point(), width=6, height=4)
@@ -9,3 +14,9 @@ ggsave('gallery/cinderplot/figs/continuous-gg.pdf', ggplot(mtcars, aes(wt, mpg, 
 ggsave('gallery/cinderplot/figs/logx-gg.pdf', ggplot(mtcars, aes(hp, mpg)) + geom_point() + scale_x_log10(), width=6, height=4)
 ggsave('gallery/cinderplot/figs/iris-sepal-gg.pdf', ggplot(iris, aes(Sepal.Length, Sepal.Width, colour = Species)) + geom_point(), width=6, height=4)
 ggsave('gallery/cinderplot/figs/iris-petal-gg.pdf', ggplot(iris, aes(Petal.Length, Petal.Width, colour = Species)) + geom_point(), width=6, height=4)
+ggsave('gallery/cinderplot/figs/faithful-gg.pdf', ggplot(faithful, aes(waiting, eruptions)) + geom_point(), width=6, height=4)
+ggsave('gallery/cinderplot/figs/quakes-gg.pdf', ggplot(quakes, aes(long, lat, colour = mag)) + geom_point() +
+  scale_colour_gradient(low = "#132b43", high = "#56b1f7"), width=6, height=4)
+ggsave('gallery/cinderplot/figs/diamonds-gg.pdf', # diamonds, a 2000-row sample
+ggplot(diamonds, aes(carat, price, colour = cut)) + geom_point(), width=6, height=4)
+ggsave('gallery/cinderplot/figs/cars-gg.pdf', ggplot(cars, aes(speed, dist)) + geom_point(), width=6, height=4)
