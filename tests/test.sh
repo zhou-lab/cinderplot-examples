@@ -41,4 +41,9 @@ if "$CINDERPLOT" "$tmpdir/bad.csv" -x x -y y -o "$tmpdir/bad-csv.pdf" \
 fi
 grep 'malformed quoted field' "$tmpdir/err" >/dev/null
 
+# geom_density (1-D KDE) on the GM12878 methylation betas -> SVG
+"$CINDERPLOT" "$data/gm12878_betas.tsv + aes(beta) + geom_density()" -o "$tmpdir/density.svg"
+test -s "$tmpdir/density.svg"
+grep -q '<svg' "$tmpdir/density.svg"
+
 echo "all tests passed"
