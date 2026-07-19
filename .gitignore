@@ -1,5 +1,6 @@
 *.pdf
 *.png
+.DS_Store
 
 # rendered gallery figures live under docs/figs and are served on this repo's
 # Pages site (https://zhou-lab.github.io/cinderplot-examples/figs/…)
