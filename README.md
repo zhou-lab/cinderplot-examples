@@ -30,11 +30,15 @@ Each subdirectory has its own README with the exact commands.
 ## Running the examples
 
 These assume `cinderplot` is on your `PATH` (built from the code repo and
-installed, or `make install`). Commands use repo-root-relative paths, e.g.:
+installed, or `make install`). Sample data lives in `data/`. Reference genome
+annotation (cytoband, seqinfo, gene models) is read straight from a genome repo:
+cinderplot decompresses gzip/bgzip and region-queries a tabix index in memory,
+so point those arguments at your local copy (e.g. `~/repo/genomes/hg38`):
 
 ```sh
-cinderplot genome/k562.bins.tsv \
-  '... + scale_x_genome("genome/hg38.seqinfo.tsv") ...' -o k562.pdf
+cinderplot data/k562.bins.tsv \
+  '... + scale_x_genome("/path/to/genomes/hg38/seqinfo.tsv.gz")
+       + ideogram("/path/to/genomes/hg38/cytoband.tsv.gz") ...' -o k562.pdf
 ```
 
 ## Running the tests
