@@ -434,6 +434,51 @@ if "$CINDERPLOT" "$tmpdir/bad.tre + geom_tree()" -o "$tmpdir/tb.pdf" 2>"$tmpdir/
 fi
 grep 'malformed Newick' "$tmpdir/tb.err" >/dev/null
 
+# Branch lengths are all-or-nothing. A partly annotated tree used to take the
+# metric path and read a missing length as zero, putting those tips on top of
+# their own parent -- a picture saying they branched at the root.
+printf '((a,b:5)AB,c:2)root;' >"$tmpdir/mixed.tre"
+if "$CINDERPLOT" "$tmpdir/mixed.tre + geom_tree()" -o "$tmpdir/mx.pdf" 2>"$tmpdir/mx.err"; then
+    echo "mixed branch lengths unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'give every branch one, or none' "$tmpdir/mx.err" >/dev/null
+
+# A length that cannot be drawn is rejected rather than collapsing the tree.
+for bad in 'inf' '-3'; do
+    printf '((a:%s,b:1)AB,c:1)root;' "$bad" >"$tmpdir/badlen.tre"
+    if "$CINDERPLOT" "$tmpdir/badlen.tre + geom_tree()" \
+        -o "$tmpdir/bl.pdf" 2>"$tmpdir/bl.err"; then
+        echo "branch length $bad unexpectedly succeeded" >&2
+        exit 1
+    fi
+    grep 'finite and non-negative' "$tmpdir/bl.err" >/dev/null
+done
+
+# [...] comments are skipped (NHX uses them), doubled quotes are one literal
+# quote, and a polytomy is not special.
+# A quoted name may hold the characters Newick reserves -- comma, colon,
+# parens -- which is the whole reason for quoting.
+printf "((a[&&NHX:S=human],'b''s cell',,'x, y',d)P,'c:z(1)')root;" >"$tmpdir/nhx.tre"
+"$CINDERPLOT" "$tmpdir/nhx.tre + geom_tree() + geom_tiplab()" -o "$tmpdir/nhx.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/nhx.pdf" - | grep -q "b's cell"
+    pdftotext "$tmpdir/nhx.pdf" - | grep -q 'x, y'
+    pdftotext "$tmpdir/nhx.pdf" - | grep -q 'c:z(1)'
+    if pdftotext "$tmpdir/nhx.pdf" - | grep -q 'NHX'; then
+        echo "an NHX comment leaked into a label" >&2
+        exit 1
+    fi
+fi
+
+# A length on the root measures to a parent that is not drawn, so it must not
+# shift the tree: the two trees differ only by that length and render alike.
+printf '((a:1,b:1)AB:1,c:2)root;' >"$tmpdir/r0.tre"
+printf '((a:1,b:1)AB:1,c:2)root:0.5;' >"$tmpdir/r1.tre"
+"$CINDERPLOT" "$tmpdir/r0.tre + geom_tree()" -o "$tmpdir/r0.png" --dpi 72
+"$CINDERPLOT" "$tmpdir/r1.tre + geom_tree()" -o "$tmpdir/r1.png" --dpi 72
+cmp "$tmpdir/r0.png" "$tmpdir/r1.png"
+
 # labs(x=)/labs(y=) name the heatmap axes instead of being dropped.
 "$CINDERPLOT" \
     "$tmpdir/diag.tsv + heatmap(cluster=none) + labs(x=\"predicted\", y=\"truth\")" \
