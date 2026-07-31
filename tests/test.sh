@@ -523,4 +523,34 @@ fi
     -o "$tmpdir/vl.pdf"
 test -s "$tmpdir/vl.pdf"
 
+# geom_nodelab() on a cladogram widens each branch to hold its label, so a
+# chain of long names stays readable instead of overprinting. x is arbitrary on
+# a cladogram, so stretching it misrepresents nothing.
+printf '((((tipA,tipB)Adrenal.Zona.Glomerulosa)Breast.Luminal.Epithelial)Muscle.Adipocyte.Progenitor,tipC)root;' >"$tmpdir/chain.tre"
+"$CINDERPLOT" "$tmpdir/chain.tre + geom_tree() + geom_tiplab()" -o "$tmpdir/ch0.pdf"
+"$CINDERPLOT" "$tmpdir/chain.tre + geom_tree() + geom_tiplab() + geom_nodelab()" \
+    -o "$tmpdir/ch1.pdf"
+if command -v pdfinfo >/dev/null 2>&1; then
+    w0=$(pdfinfo "$tmpdir/ch0.pdf" | awk '/Page size/{print int($3)}')
+    w1=$(pdfinfo "$tmpdir/ch1.pdf" | awk '/Page size/{print int($3)}')
+    test "$w1" -gt "$w0"
+fi
+
+# A phylogram's lengths are the datum, so they are NOT stretched to fit labels.
+printf '((a:1,b:1)AB:1,c:2)root;' >"$tmpdir/phy.tre"
+"$CINDERPLOT" "$tmpdir/phy.tre + geom_tree() + geom_tiplab()" -o "$tmpdir/ph0.pdf"
+"$CINDERPLOT" "$tmpdir/phy.tre + geom_tree() + geom_tiplab() + geom_nodelab()" \
+    -o "$tmpdir/ph1.pdf"
+if command -v pdfinfo >/dev/null 2>&1; then
+    p0=$(pdfinfo "$tmpdir/ph0.pdf" | awk '/Page size/{print int($3)}')
+    p1=$(pdfinfo "$tmpdir/ph1.pdf" | awk '/Page size/{print int($3)}')
+    test "$p0" -eq "$p1"
+fi
+
+# The root has no incoming branch, so its label must read forward from the node
+# rather than off the left edge of the surface.
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/ch1.pdf" - | grep -q root
+fi
+
 echo "all tests passed"
