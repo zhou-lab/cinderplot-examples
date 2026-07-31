@@ -250,4 +250,34 @@ grep 'diagonal, symmetric, or none' "$tmpdir/bad-cluster.err" >/dev/null
     -o "$tmpdir/off.pdf"
 test -s "$tmpdir/off.pdf"
 
+# A placement anchors to the anchor's plot body, so beneath() used to put the
+# next panel under the anchor's cells and let the anchor's column labels draw on
+# top of it. The labels now take their own gutter, which is only visible in the
+# geometry: labelling the upper panel must cost the lower panel some room. Before
+# the fix the lower panel was laid out identically either way.
+# Distinct label vocabularies so the lower panel's rows can be picked out of the
+# page: only it draws Rn, and only the upper panel draws the long Cn names whose
+# presence is the variable under test.
+printf 'true\tCumbersome1\tCumbersome2\n' >"$tmpdir/stack-top.tsv"
+printf 'T1\t1\t0\nT2\t0\t1\n' >>"$tmpdir/stack-top.tsv"
+printf 'true\tCumbersome1\tCumbersome2\n' >"$tmpdir/stack-bot.tsv"
+printf 'Rone\t1\t0\nRtwo\t0\t1\n' >>"$tmpdir/stack-bot.tsv"
+if command -v pdftotext >/dev/null 2>&1; then
+    for cn in bottom none; do
+        "$CINDERPLOT" \
+            "$tmpdir/stack-top.tsv + heatmap(name=\"a\", cluster=none, colnames=$cn)
+             + heatmap(data=\"$tmpdir/stack-bot.tsv\", beneath(\"a\"), name=\"b\",
+                       cluster=none, rownames=right)" \
+            -o "$tmpdir/stack-$cn.pdf"
+        pdftotext -bbox "$tmpdir/stack-$cn.pdf" - \
+            | grep 'R\(one\|two\)<' \
+            | sed -n 's/.*yMin="\([0-9]*\)\..*/\1/p' | sort -n >"$tmpdir/stack-$cn.y"
+        test -s "$tmpdir/stack-$cn.y"
+    done
+    if cmp -s "$tmpdir/stack-bottom.y" "$tmpdir/stack-none.y"; then
+        echo "beneath() gave the anchor's column labels no room" >&2
+        exit 1
+    fi
+fi
+
 echo "all tests passed"
