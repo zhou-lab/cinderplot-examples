@@ -392,4 +392,55 @@ if command -v pdfinfo >/dev/null 2>&1; then
     test "$w" -gt 150
 fi
 
+# Newick tree mode: topology, tip labels and node labels from a .tre file.
+printf '((a,b)AB,(c,d)CD)root;' >"$tmpdir/t.tre"
+"$CINDERPLOT" "$tmpdir/t.tre + geom_tree() + geom_tiplab()" -o "$tmpdir/tree.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    got=$(pdftotext "$tmpdir/tree.pdf" - | tr -d ' \n\f')
+    test "$got" = "abcd"          # tips only, in Newick order
+fi
+"$CINDERPLOT" "$tmpdir/t.tre + geom_tree() + geom_tiplab() + geom_nodelab()" \
+    -o "$tmpdir/tree-nl.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/tree-nl.pdf" - | grep -q AB
+    pdftotext "$tmpdir/tree-nl.pdf" - | grep -q root
+fi
+
+# Branch lengths are honoured when present.
+printf '((a:1,b:5)AB:1,c:2)root;' >"$tmpdir/tl.tre"
+"$CINDERPLOT" "$tmpdir/tl.tre + geom_tree() + geom_tiplab()" -o "$tmpdir/tree-len.pdf"
+test -s "$tmpdir/tree-len.pdf"
+
+# The deferred parts of the feature say so rather than drawing something that
+# looks like they worked.
+if "$CINDERPLOT" "$tmpdir/t.tre + geom_tree(layout=circular)" \
+    -o "$tmpdir/tc.pdf" 2>"$tmpdir/tc.err"; then
+    echo "layout=circular unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'only rectangular so far' "$tmpdir/tc.err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/t.tre + geom_tree() + geom_tiplab(data=\"x.tsv\")" \
+    -o "$tmpdir/tj.pdf" 2>"$tmpdir/tj.err"; then
+    echo "geom_tiplab(data=) unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'cannot be joined to an external table' "$tmpdir/tj.err" >/dev/null
+
+# Malformed Newick is a bounded error, not a crash.
+printf '(a,b' >"$tmpdir/bad.tre"
+if "$CINDERPLOT" "$tmpdir/bad.tre + geom_tree()" -o "$tmpdir/tb.pdf" 2>"$tmpdir/tb.err"; then
+    echo "truncated Newick unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'malformed Newick' "$tmpdir/tb.err" >/dev/null
+
+# labs(x=)/labs(y=) name the heatmap axes instead of being dropped.
+"$CINDERPLOT" \
+    "$tmpdir/diag.tsv + heatmap(cluster=none) + labs(x=\"predicted\", y=\"truth\")" \
+    -o "$tmpdir/hmlabs.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/hmlabs.pdf" - | grep -q predicted
+    pdftotext "$tmpdir/hmlabs.pdf" - | grep -q truth
+fi
+
 echo "all tests passed"
