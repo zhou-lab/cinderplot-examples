@@ -1,68 +1,68 @@
-node	level
-Adipocyte	compartment
-Adipocyte	lineage
-Adipocyte	group
-Adrenal.Cortex	group
-Adrenal.Epithelial	lineage
-Astrocyte	group
-Blood.B	group
-Blood.Granulocyte	group
-Blood.NK	group
-Blood.T	group
-Breast.Basal.Epithelial	group
-Breast.Epithelial	lineage
-Breast.Luminal.Epithelial	group
-Cardiac.Muscle	lineage
-Colon	group
-Endothel	compartment
-Endothel	lineage
-Epithelial	compartment
-Erythrocyte.Progenitor	group
-Erythroid	lineage
-Excitatory.Neuron	group
-Fibroblast	compartment
-Fibroblast	lineage
-Fibroblast	group
-GI.Epithelial	lineage
-Gastric	group
-Glia	lineage
-Goblet	group
-Heart.Cardiomyocyte	group
-Hepatocyte	lineage
-Hepatocyte	group
-Inhibitory.Neuron	group
-Kidney.Epithelial	lineage
-Kidney.Epithelial	group
-Leukocyte	compartment
-Lung.Alveolar.Epithelial	group
-Lung.Bronchus.Epithelial	group
-Lung.Epithelial	lineage
-Lymphatic.Endothel	group
-Lymphocyte	lineage
-Macrophage+Monocyte	group
-Mast.Cell	group
-Microglia	group
-Muscle	compartment
-Myeloid	lineage
-Neuron	lineage
-Neuron+Glia	compartment
-Oligodendrocyte	group
-Pancreas.Acinar	group
-Pancreas.Alpha	group
-Pancreas.Beta	group
-Pancreas.Delta	group
-Pancreas.Duct	group
-Pancreas.Exocrine	lineage
-Pancreatic.Islet	lineage
-Perivascular	compartment
-Perivascular	lineage
-Perivascular	group
-Schwann.Cell	group
-Skeletal.Muscle	lineage
-Skeletal.Muscle	group
-Small.Intest	group
-Thyroid.Epithelial	lineage
-Thyroid.Epithelial	group
-Trophoblast	lineage
-Trophoblast	group
-Vascular.Endothel	group
+node	level	node_id
+Adipocyte	compartment	55
+Adipocyte	lineage	55
+Adipocyte	group	55
+Adrenal.Cortex	group	52
+Adrenal.Epithelial	lineage	51
+Astrocyte	group	3
+Blood.B	group	58
+Blood.Granulocyte	group	71
+Blood.NK	group	62
+Blood.T	group	65
+Breast.Basal.Epithelial	group	31
+Breast.Epithelial	lineage	30
+Breast.Luminal.Epithelial	group	32
+Cardiac.Muscle	lineage	94
+Colon	group	35
+Endothel	compartment	78
+Endothel	lineage	78
+Epithelial	compartment	20
+Erythrocyte.Progenitor	group	77
+Erythroid	lineage	76
+Excitatory.Neuron	group	9
+Fibroblast	compartment	82
+Fibroblast	lineage	82
+Fibroblast	group	82
+GI.Epithelial	lineage	34
+Gastric	group	39
+Glia	lineage	2
+Goblet	group	41
+Heart.Cardiomyocyte	group	95
+Hepatocyte	lineage	46
+Hepatocyte	group	46
+Inhibitory.Neuron	group	14
+Kidney.Epithelial	lineage	45
+Kidney.Epithelial	group	45
+Leukocyte	compartment	56
+Lung.Alveolar.Epithelial	group	22
+Lung.Bronchus.Epithelial	group	25
+Lung.Epithelial	lineage	21
+Lymphatic.Endothel	group	79
+Lymphocyte	lineage	57
+Macrophage+Monocyte	group	73
+Mast.Cell	group	72
+Microglia	group	4
+Muscle	compartment	93
+Myeloid	lineage	70
+Neuron	lineage	8
+Neuron+Glia	compartment	1
+Oligodendrocyte	group	6
+Pancreas.Acinar	group	43
+Pancreas.Alpha	group	27
+Pancreas.Beta	group	28
+Pancreas.Delta	group	29
+Pancreas.Duct	group	44
+Pancreas.Exocrine	lineage	42
+Pancreatic.Islet	lineage	26
+Perivascular	compartment	101
+Perivascular	lineage	101
+Perivascular	group	101
+Schwann.Cell	group	5
+Skeletal.Muscle	lineage	98
+Skeletal.Muscle	group	98
+Small.Intest	group	37
+Thyroid.Epithelial	lineage	50
+Thyroid.Epithelial	group	50
+Trophoblast	lineage	47
+Trophoblast	group	47
+Vascular.Endothel	group	80
