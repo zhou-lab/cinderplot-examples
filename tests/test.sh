@@ -46,8 +46,8 @@ grep 'malformed quoted field' "$tmpdir/err" >/dev/null
 test -s "$tmpdir/density.svg"
 grep -q '<svg' "$tmpdir/density.svg"
 
-# Discrete y supports its documented maximum of 40 categories without
-# overflowing the axis-label or minor-grid buffers.
+# Discrete y handles a large category count without overflowing the axis-label
+# or minor-grid buffers. (40 was once the hard limit; it is now just a size.)
 printf 'x\ty\tz\n' >"$tmpdir/tile40.tsv"
 i=1
 while [ "$i" -le 40 ]; do
@@ -306,5 +306,76 @@ if "$CINDERPLOT" "$tmpdir/diag.tsv + heatmap(box=maybe)" \
     exit 1
 fi
 grep 'use on/off or a quoted colour' "$tmpdir/box-bad.err" >/dev/null
+
+# facet_wrap(scales=): a freed axis is trained per panel, so a panel whose data
+# occupies a different range gets different tick labels. Panel "a" spans 1-2 and
+# panel "b" spans 100-200; under fixed scales both show the same breaks.
+printf 'p,x,y\na,1,1\na,2,2\nb,100,1\nb,200,2\n' >"$tmpdir/fs.csv"
+"$CINDERPLOT" "$tmpdir/fs.csv + aes(x,y) + geom_point() + facet_wrap(~p)" \
+    -o "$tmpdir/fs-fixed.pdf"
+"$CINDERPLOT" "$tmpdir/fs.csv + aes(x,y) + geom_point() + facet_wrap(~p, scales=\"free_x\")" \
+    -o "$tmpdir/fs-free.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    fx=$(pdftotext "$tmpdir/fs-fixed.pdf" - | tr -s ' \n' ' ')
+    fr=$(pdftotext "$tmpdir/fs-free.pdf" - | tr -s ' \n' ' ')
+    test "$fx" != "$fr"
+fi
+
+# A discrete axis drops the categories a panel has no rows for, so a freed panel
+# shows fewer tick labels than the shared axis does.
+printf 'p,k,y\na,alpha,1\na,beta,2\nb,gamma,1\nb,delta,2\n' >"$tmpdir/fd.csv"
+"$CINDERPLOT" \
+    "$tmpdir/fd.csv + aes(factor(k),y) + geom_point() + facet_wrap(~p, scales=\"free_x\")" \
+    -o "$tmpdir/fd.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    # each of the four names is drawn once, not once per panel
+    for name in alpha beta gamma delta; do
+        test "$(pdftotext "$tmpdir/fd.pdf" - | grep -c "$name")" -eq 1
+    done
+fi
+
+# scales= is refused where there is nothing to scale, and validates its value.
+if "$CINDERPLOT" "$tmpdir/fs.csv + aes(x,y) + geom_point() + facet_wrap(~p, scales=\"nope\")" \
+    -o "$tmpdir/fs-bad.pdf" 2>"$tmpdir/fs-bad.err"; then
+    echo "scales=nope unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'use fixed, free_x, free_y, or free' "$tmpdir/fs-bad.err" >/dev/null
+
+# A discrete axis is no longer capped at 40 categories.
+{ printf 'k,y\n'; i=1; while [ "$i" -le 60 ]; do printf 'cat%s,%s\n' "$i" "$i"; i=$((i+1)); done; } \
+    >"$tmpdir/many.csv"
+"$CINDERPLOT" "$tmpdir/many.csv + aes(factor(k),y) + geom_point()" -o "$tmpdir/many.pdf"
+test -s "$tmpdir/many.pdf"
+
+# Crowded labels rotate; an explicit angle overrides the decision, and angle=0
+# means horizontal rather than "decide for me".
+"$CINDERPLOT" "$tmpdir/many.csv + aes(factor(k),y) + geom_point() + scale_x_discrete(angle=0)" \
+    -o "$tmpdir/many-flat.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    # rotated text extracts with different word boxes than horizontal text
+    a=$(pdftotext -bbox "$tmpdir/many.pdf" - | grep -c '<word')
+    b=$(pdftotext -bbox "$tmpdir/many-flat.pdf" - | grep -c '<word')
+    test "$a" -gt 0 && test "$b" -gt 0
+fi
+if "$CINDERPLOT" "$tmpdir/many.csv + aes(factor(k),y) + geom_point() + scale_x_discrete(angle=120)" \
+    -o "$tmpdir/bad-angle.pdf" 2>"$tmpdir/bad-angle.err"; then
+    echo "angle=120 unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'between 0 and 90' "$tmpdir/bad-angle.err" >/dev/null
+
+# Omitting --size fits the canvas to the content; giving one is honoured exactly.
+"$CINDERPLOT" "$tmpdir/many.csv + aes(factor(k),y) + geom_point()" -o "$tmpdir/auto.pdf"
+"$CINDERPLOT" "$tmpdir/fs.csv + aes(x,y) + geom_point()" -o "$tmpdir/auto-small.pdf"
+"$CINDERPLOT" "$tmpdir/many.csv + aes(factor(k),y) + geom_point()" --size 6x4 \
+    -o "$tmpdir/explicit.pdf"
+if command -v pdfinfo >/dev/null 2>&1; then
+    big=$(pdfinfo "$tmpdir/auto.pdf" | awk '/Page size/{print int($3)}')
+    small=$(pdfinfo "$tmpdir/auto-small.pdf" | awk '/Page size/{print int($3)}')
+    exp=$(pdfinfo "$tmpdir/explicit.pdf" | awk '/Page size/{print int($3)}')
+    test "$big" -gt "$small"      # 60 categories need more room than 2 points
+    test "$exp" -eq 432           # --size 6x4 is 432pt wide, whatever the content
+fi
 
 echo "all tests passed"
