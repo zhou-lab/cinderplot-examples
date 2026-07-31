@@ -413,12 +413,33 @@ test -s "$tmpdir/tree-len.pdf"
 
 # The deferred parts of the feature say so rather than drawing something that
 # looks like they worked.
-if "$CINDERPLOT" "$tmpdir/t.tre + geom_tree(layout=circular)" \
-    -o "$tmpdir/tc.pdf" 2>"$tmpdir/tc.err"; then
-    echo "layout=circular unexpectedly succeeded" >&2
+# Three layouts, each a different drawing of the same topology.
+for lay in rectangular slanted circular; do
+    "$CINDERPLOT" "$tmpdir/t.tre + geom_tree(layout=$lay) + geom_tiplab()" \
+        -o "$tmpdir/lay-$lay.pdf"
+    test -s "$tmpdir/lay-$lay.pdf"
+done
+if cmp -s "$tmpdir/lay-rectangular.pdf" "$tmpdir/lay-slanted.pdf"; then
+    echo "layout=slanted drew the same figure as rectangular" >&2
     exit 1
 fi
-grep 'only rectangular so far' "$tmpdir/tc.err" >/dev/null
+if cmp -s "$tmpdir/lay-rectangular.pdf" "$tmpdir/lay-circular.pdf"; then
+    echo "layout=circular drew the same figure as rectangular" >&2
+    exit 1
+fi
+# A circular tree gets a square canvas; the others do not.
+if command -v pdfinfo >/dev/null 2>&1; then
+    cw=$(pdfinfo "$tmpdir/lay-circular.pdf" | awk '/Page size/{print int($3)}')
+    ch=$(pdfinfo "$tmpdir/lay-circular.pdf" | awk '/Page size/{print int($5)}')
+    test "$cw" -eq "$ch"
+fi
+# An unknown layout enumerates the three rather than picking one.
+if "$CINDERPLOT" "$tmpdir/t.tre + geom_tree(layout=spiral)" \
+    -o "$tmpdir/tc.pdf" 2>"$tmpdir/tc.err"; then
+    echo "layout=spiral unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'use rectangular, slanted or circular' "$tmpdir/tc.err" >/dev/null
 # Joining a table on node/tip name. Several rows for one name draw several
 # marks, which is the point: a node in three categories shows three dots.
 printf 'node\tlevel\nAB\tcompartment\nAB\tlineage\nAB\tgroup\nCD\tgroup\n' \
