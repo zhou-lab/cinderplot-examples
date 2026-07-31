@@ -480,6 +480,38 @@ if "$CINDERPLOT" \
 fi
 grep 'is the join key' "$tmpdir/j2.err" >/dev/null
 
+# A name-keyed join is ambiguous the moment a name is not unique: every node
+# called A would match every row for A, which is a figure that reads as correct
+# and is not. Refuse rather than pick a tie-break.
+printf '(((t1,t2)A,(t3,t4)B)A,t5)A;' >"$tmpdir/dup.tre"
+printf 'node\tlevel\nA\tcompartment\nA\tlineage\nA\tgroup\nB\tgroup\n' \
+    >"$tmpdir/dup.tsv"
+if "$CINDERPLOT" \
+    "$tmpdir/dup.tre + geom_tree() + geom_nodepoint(data=\"$tmpdir/dup.tsv\", colour=level)" \
+    -o "$tmpdir/dup.pdf" 2>"$tmpdir/dup.err"; then
+    echo "an ambiguous name-keyed join unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'names 3 internal nodes' "$tmpdir/dup.err" >/dev/null
+# but a repeated name the table never mentions is harmless
+printf 'node\tlevel\nB\tgroup\n' >"$tmpdir/bonly.tsv"
+"$CINDERPLOT" \
+    "$tmpdir/dup.tre + geom_tree() + geom_nodepoint(data=\"$tmpdir/bonly.tsv\", colour=level)" \
+    -o "$tmpdir/dupok.pdf"
+test -s "$tmpdir/dupok.pdf"
+
+# The nudge that separates stacked marks is a page distance, so it must not
+# scale with the canvas -- it used to be divided by the data span, which threw
+# the marks clear of their own node on a wide figure.
+printf '((a,b)AB,c)root;' >"$tmpdir/nudge.tre"
+printf 'node\tlevel\nAB\tx\nAB\ty\nAB\tz\n' >"$tmpdir/nudge.tsv"
+for w in 4 16; do
+    "$CINDERPLOT" \
+        "$tmpdir/nudge.tre + geom_tree() + geom_nodepoint(data=\"$tmpdir/nudge.tsv\", colour=level)" \
+        --size ${w}x4 -o "$tmpdir/nudge-$w.pdf"
+    test -s "$tmpdir/nudge-$w.pdf"
+done
+
 # Malformed Newick is a bounded error, not a crash.
 printf '(a,b' >"$tmpdir/bad.tre"
 if "$CINDERPLOT" "$tmpdir/bad.tre + geom_tree()" -o "$tmpdir/tb.pdf" 2>"$tmpdir/tb.err"; then
