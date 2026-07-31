@@ -488,4 +488,39 @@ if command -v pdftotext >/dev/null 2>&1; then
     pdftotext "$tmpdir/hmlabs.pdf" - | grep -q truth
 fi
 
+# A user limit is a domain the caller chose, so freeing an axis frees its
+# BREAKS, not its limits. xlim() used to parse, run, and do nothing here.
+printf 'p,x,y\na,1,1\na,2,2\nb,100,1\nb,200,2\n' >"$tmpdir/lim.csv"
+"$CINDERPLOT" "$tmpdir/lim.csv + aes(x,y) + geom_point() + facet_wrap(~p, scales=\"free_x\")" \
+    -o "$tmpdir/lim-free.pdf"
+"$CINDERPLOT" "$tmpdir/lim.csv + aes(x,y) + geom_point() + facet_wrap(~p, scales=\"free_x\") + xlim(0,400)" \
+    -o "$tmpdir/lim-set.pdf"
+if cmp -s "$tmpdir/lim-free.pdf" "$tmpdir/lim-set.pdf"; then
+    echo "xlim() was ignored under free scales" >&2
+    exit 1
+fi
+
+# A limit that cannot be log-transformed is refused rather than turned into NaN.
+if "$CINDERPLOT" "$tmpdir/lim.csv + aes(x,y) + geom_point() + scale_x_log10() + xlim(-1,100)" \
+    -o "$tmpdir/loglim.pdf" 2>"$tmpdir/loglim.err"; then
+    echo "a negative log limit unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'must be positive on a log axis' "$tmpdir/loglim.err" >/dev/null
+
+# geom_abline() expands the panel to show where the line runs, as its hline and
+# vline siblings already did.
+"$CINDERPLOT" "$tmpdir/lim.csv + aes(x,y) + geom_point()" -o "$tmpdir/ab0.pdf"
+"$CINDERPLOT" "$tmpdir/lim.csv + aes(x,y) + geom_point() + geom_abline(intercept=50, slope=1)" \
+    -o "$tmpdir/ab1.pdf"
+if cmp -s "$tmpdir/ab0.pdf" "$tmpdir/ab1.pdf"; then
+    echo "geom_abline() did not expand the panel" >&2
+    exit 1
+fi
+
+# A vline off the log domain is dropped, not turned into a NaN range.
+"$CINDERPLOT" "$tmpdir/lim.csv + aes(x,y) + geom_point() + scale_x_log10() + geom_vline(xintercept=-5)" \
+    -o "$tmpdir/vl.pdf"
+test -s "$tmpdir/vl.pdf"
+
 echo "all tests passed"
