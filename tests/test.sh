@@ -719,4 +719,31 @@ if command -v pdfinfo >/dev/null 2>&1; then
     test "$(pdfinfo "$tmpdir/tf.pdf" | awk '/Page size/{print int($3)}')" -eq 216
 fi
 
+# Every built-in continuous palette renders.
+for pal in viridis magma inferno plasma cividis rocket mako parula turbo \
+           coolwarm bwr jet; do
+    "$CINDERPLOT" "$tmpdir/share.tsv + heatmap(cluster=none) + scale_fill_${pal}()" \
+        -o "$tmpdir/pal-$pal.pdf"
+    test -s "$tmpdir/pal-$pal.pdf"
+done
+# ...and they are actually different ramps, not aliases of one another
+if cmp -s "$tmpdir/pal-viridis.pdf" "$tmpdir/pal-turbo.pdf"; then
+    echo "turbo and viridis drew the same thing" >&2
+    exit 1
+fi
+# an unknown one lists them
+if "$CINDERPLOT" "$tmpdir/share.tsv + heatmap(cluster=none) + scale_fill_nope()" \
+    -o "$tmpdir/palbad.pdf" 2>"$tmpdir/palbad.err"; then
+    echo "scale_fill_nope() unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'turbo, coolwarm' "$tmpdir/palbad.err" >/dev/null
+
+# A discrete colour aesthetic is no longer capped at 15 levels: the legend
+# reserves 2*nlev+1 rows in the gtable, and that bound used to be 32.
+{ printf 'x,y,g\n'; i=1; while [ "$i" -le 40 ]; do
+    printf '%s,%s,type%s\n' "$i" "$i" "$i"; i=$((i + 1)); done; } >"$tmpdir/lv40.csv"
+"$CINDERPLOT" "$tmpdir/lv40.csv + aes(x,y,colour=g) + geom_point()" -o "$tmpdir/lv40.pdf"
+test -s "$tmpdir/lv40.pdf"
+
 echo "all tests passed"
