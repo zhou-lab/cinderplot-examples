@@ -665,4 +665,38 @@ if command -v pdftotext >/dev/null 2>&1; then
     pdftotext "$tmpdir/ch1.pdf" - | grep -q root
 fi
 
+# title= on a placed object names that panel. It used to reach only the legend,
+# so on a heatmap it parsed and vanished -- the same silent drop labs(x=) had.
+"$CINDERPLOT" \
+    "$tmpdir/share.tsv + heatmap(name=\"a\", cluster=none, title=\"compartment\")
+     + heatmap(data=\"$tmpdir/share.tsv\", beneath(\"a\"), name=\"b\",
+               cluster=none, title=\"lineage\")" \
+    -o "$tmpdir/ptitle.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/ptitle.pdf" - | grep -q compartment
+    pdftotext "$tmpdir/ptitle.pdf" - | grep -q lineage
+fi
+# and it must be given room, not just drawn: titling the panels costs height
+"$CINDERPLOT" \
+    "$tmpdir/share.tsv + heatmap(name=\"a\", cluster=none)
+     + heatmap(data=\"$tmpdir/share.tsv\", beneath(\"a\"), name=\"b\", cluster=none)" \
+    --size 5x7 -o "$tmpdir/notitle.pdf"
+"$CINDERPLOT" \
+    "$tmpdir/share.tsv + heatmap(name=\"a\", cluster=none, title=\"compartment\")
+     + heatmap(data=\"$tmpdir/share.tsv\", beneath(\"a\"), name=\"b\",
+               cluster=none, title=\"lineage\")" \
+    --size 5x7 -o "$tmpdir/withtitle.pdf"
+if cmp -s "$tmpdir/notitle.pdf" "$tmpdir/withtitle.pdf"; then
+    echo "panel titles were drawn without reserving room" >&2
+    exit 1
+fi
+
+# TRUE/FALSE read as on/off: an R user types TRUE first.
+"$CINDERPLOT" "$tmpdir/share.tsv + heatmap(cluster=none, box=TRUE)" -o "$tmpdir/bt.pdf"
+"$CINDERPLOT" "$tmpdir/share.tsv + heatmap(cluster=none, box=FALSE)" -o "$tmpdir/bf.pdf"
+if cmp -s "$tmpdir/bt.pdf" "$tmpdir/bf.pdf"; then
+    echo "box=TRUE and box=FALSE drew the same thing" >&2
+    exit 1
+fi
+
 echo "all tests passed"
