@@ -699,4 +699,24 @@ if cmp -s "$tmpdir/bt.pdf" "$tmpdir/bf.pdf"; then
     exit 1
 fi
 
+# A title is chrome: auto-fit sized the canvas from the cells and their labels
+# alone, so a title longer than the figure was simply cut off.
+"$CINDERPLOT" "$tmpdir/share.tsv + heatmap(cluster=none) + labs(title=\"short\")" \
+    -o "$tmpdir/ts.pdf"
+"$CINDERPLOT" \
+    "$tmpdir/share.tsv + heatmap(cluster=none)
+     + labs(title=\"a considerably longer title than the figure is otherwise wide\")" \
+    -o "$tmpdir/tl.pdf"
+if command -v pdfinfo >/dev/null 2>&1; then
+    ws=$(pdfinfo "$tmpdir/ts.pdf" | awk '/Page size/{print int($3)}')
+    wl=$(pdfinfo "$tmpdir/tl.pdf" | awk '/Page size/{print int($3)}')
+    test "$wl" -gt "$ws"
+    # ...but an explicit size is still exactly what was asked for
+    "$CINDERPLOT" \
+        "$tmpdir/share.tsv + heatmap(cluster=none)
+         + labs(title=\"a considerably longer title than the figure is otherwise wide\")" \
+        --size 3x3 -o "$tmpdir/tf.pdf"
+    test "$(pdfinfo "$tmpdir/tf.pdf" | awk '/Page size/{print int($3)}')" -eq 216
+fi
+
 echo "all tests passed"
