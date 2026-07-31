@@ -378,4 +378,18 @@ if command -v pdfinfo >/dev/null 2>&1; then
     test "$exp" -eq 432           # --size 6x4 is 432pt wide, whatever the content
 fi
 
+# A small matrix with long labels keeps the cells at a majority of the figure,
+# rather than letting the label margins dominate what little data there is.
+printf 'true\tCellType.Level.A\tCellType.Level.B\n' >"$tmpdir/share.tsv"
+printf 'CellType.Level.A\t1\t0\nCellType.Level.B\t0\t1\n' >>"$tmpdir/share.tsv"
+"$CINDERPLOT" \
+    "$tmpdir/share.tsv + heatmap(name=\"m\", cluster=none, rownames=right, colnames=bottom)" \
+    -o "$tmpdir/share.pdf"
+if command -v pdfinfo >/dev/null 2>&1; then
+    w=$(pdfinfo "$tmpdir/share.pdf" | awk '/Page size/{print int($3)}')
+    # the two long row labels alone are ~90pt; a figure that were only cells
+    # plus margins would be far narrower than this
+    test "$w" -gt 150
+fi
+
 echo "all tests passed"
