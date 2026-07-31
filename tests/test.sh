@@ -202,4 +202,52 @@ if command -v pdftotext >/dev/null 2>&1; then
     test "$(pdftotext "$tmpdir/regions.pdf" - | grep -o 'bp' | wc -l)" -eq 2
 fi
 
+# cluster=diagonal puts a same-named column opposite its row, whatever order the
+# columns arrived in, and appends the columns no row claims. Here the columns are
+# D B A C Z against rows A B C D, so the rendered column order is the test.
+printf 'true\tD\tB\tA\tC\tZ\n' >"$tmpdir/diag.tsv"
+printf 'A\t0\t0\t1\t0\t0\nB\t0\t1\t0\t0\t0\n' >>"$tmpdir/diag.tsv"
+printf 'C\t0\t0\t0\t1\t0\nD\t1\t0\t0\t0\t0\n' >>"$tmpdir/diag.tsv"
+"$CINDERPLOT" \
+    "$tmpdir/diag.tsv + heatmap(name=\"m\", cluster=diagonal, rownames=none, colnames=bottom)" \
+    -o "$tmpdir/diag.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    # Only the column labels are drawn, so the capitals in reading order are the
+    # column order -- in one direction or the other, since pdftotext walks
+    # rotated text bottom-up.
+    order=$(pdftotext "$tmpdir/diag.pdf" - | tr -cd 'A-Z')
+    test "$order" = "ABCDZ" || test "$order" = "ZDCBA"
+fi
+
+# cluster=symmetric clusters the rows and then makes the columns follow, so the
+# order changes but the diagonal does not scatter the way cluster=both does.
+"$CINDERPLOT" \
+    "$tmpdir/diag.tsv + heatmap(name=\"m\", cluster=symmetric, colnames=bottom)" \
+    -o "$tmpdir/sym.pdf"
+test -s "$tmpdir/sym.pdf"
+
+# Both need row names to match on.
+printf 'a,b\n1,2\n3,4\n' >"$tmpdir/unnamed-rows.csv"
+if "$CINDERPLOT" "$tmpdir/unnamed-rows.csv + heatmap(cluster=diagonal)" \
+    -o "$tmpdir/unnamed-rows.pdf" 2>"$tmpdir/unnamed-rows.err"; then
+    echo "cluster=diagonal without row names unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'needs row names' "$tmpdir/unnamed-rows.err" >/dev/null
+
+# A wrong cluster= enumerates every mode, the new ones included.
+if "$CINDERPLOT" "$tmpdir/diag.tsv + heatmap(cluster=bogus)" \
+    -o "$tmpdir/bad-cluster.pdf" 2>"$tmpdir/bad-cluster.err"; then
+    echo "cluster=bogus unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'diagonal, symmetric, or none' "$tmpdir/bad-cluster.err" >/dev/null
+
+# `off` says the same thing as `none` in heatmap mode as it does on a matrix()
+# track, for cluster= and for the label sides.
+"$CINDERPLOT" \
+    "$tmpdir/diag.tsv + heatmap(cluster=off, rownames=off, colnames=off)" \
+    -o "$tmpdir/off.pdf"
+test -s "$tmpdir/off.pdf"
+
 echo "all tests passed"
