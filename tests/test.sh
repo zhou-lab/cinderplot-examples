@@ -493,6 +493,32 @@ if "$CINDERPLOT" \
     exit 1
 fi
 grep 'names 3 internal nodes' "$tmpdir/dup.err" >/dev/null
+
+# ...but a NUMERIC key joins by node id, which is unique by construction and is
+# the only way to address a tree whose names repeat. Tips are 1..Ntip in Newick
+# order, then the root, then internal nodes in preorder (ape's convention).
+"$CINDERPLOT" "$tmpdir/dup.tre + geom_tree() + geom_tiplab(label=id) + geom_nodelab(label=id)" \
+    -o "$tmpdir/ids.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    got=$(pdftotext "$tmpdir/ids.pdf" - | tr -s ' \n\f' '\n' | sort -n | tr -d '\n')
+    test "$got" = "123456789"
+fi
+printf 'node\tlevel\n7\tcompartment\n8\tlineage\n6\tgroup\n' >"$tmpdir/byid.tsv"
+"$CINDERPLOT" \
+    "$tmpdir/dup.tre + geom_tree() + geom_nodelab()
+     + geom_nodepoint(data=\"$tmpdir/byid.tsv\", colour=level)" \
+    -o "$tmpdir/byid.pdf"
+test -s "$tmpdir/byid.pdf"
+
+# An id that is in no node is a typo, not an empty selection.
+printf 'node\tlevel\n99\tcompartment\n' >"$tmpdir/badid.tsv"
+if "$CINDERPLOT" \
+    "$tmpdir/dup.tre + geom_tree() + geom_nodepoint(data=\"$tmpdir/badid.tsv\", colour=level)" \
+    -o "$tmpdir/badid.pdf" 2>"$tmpdir/badid.err"; then
+    echo "an out-of-range node id unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'is not in the tree' "$tmpdir/badid.err" >/dev/null
 # but a repeated name the table never mentions is harmless
 printf 'node\tlevel\nB\tgroup\n' >"$tmpdir/bonly.tsv"
 "$CINDERPLOT" \
