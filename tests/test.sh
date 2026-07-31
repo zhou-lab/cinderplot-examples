@@ -280,4 +280,31 @@ if command -v pdftotext >/dev/null 2>&1; then
     fi
 fi
 
+# box= frames the cells. It is off by default, so switching it on must add
+# strokes the same figure did not have; a quoted value sets the colour and
+# implies on.
+"$CINDERPLOT" "$tmpdir/diag.tsv + heatmap(cluster=none)" \
+    -o "$tmpdir/nobox.pdf"
+"$CINDERPLOT" "$tmpdir/diag.tsv + heatmap(cluster=none, box=on)" \
+    -o "$tmpdir/box.pdf"
+"$CINDERPLOT" "$tmpdir/diag.tsv + heatmap(cluster=none, box=\"#b2182b\")" \
+    -o "$tmpdir/boxcol.pdf"
+test "$(wc -c <"$tmpdir/box.pdf")" -gt "$(wc -c <"$tmpdir/nobox.pdf")"
+test -s "$tmpdir/boxcol.pdf"
+
+# It applies to the two objects made of cells, and says so otherwise.
+if "$CINDERPLOT" \
+    "$tmpdir/diag.tsv + heatmap(name=\"m\") + legend(right_of(\"m\"), box=on)" \
+    -o "$tmpdir/box-legend.pdf" 2>"$tmpdir/box-legend.err"; then
+    echo "box= on a legend unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'box= applies to' "$tmpdir/box-legend.err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/diag.tsv + heatmap(box=maybe)" \
+    -o "$tmpdir/box-bad.pdf" 2>"$tmpdir/box-bad.err"; then
+    echo "box=maybe unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'use on/off or a quoted colour' "$tmpdir/box-bad.err" >/dev/null
+
 echo "all tests passed"
