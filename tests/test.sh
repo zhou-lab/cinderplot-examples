@@ -419,12 +419,45 @@ if "$CINDERPLOT" "$tmpdir/t.tre + geom_tree(layout=circular)" \
     exit 1
 fi
 grep 'only rectangular so far' "$tmpdir/tc.err" >/dev/null
-if "$CINDERPLOT" "$tmpdir/t.tre + geom_tree() + geom_tiplab(data=\"x.tsv\")" \
-    -o "$tmpdir/tj.pdf" 2>"$tmpdir/tj.err"; then
-    echo "geom_tiplab(data=) unexpectedly succeeded" >&2
+# Joining a table on node/tip name. Several rows for one name draw several
+# marks, which is the point: a node in three categories shows three dots.
+printf 'node\tlevel\nAB\tcompartment\nAB\tlineage\nAB\tgroup\nCD\tgroup\n' \
+    >"$tmpdir/lv.tsv"
+"$CINDERPLOT" \
+    "$tmpdir/t.tre + geom_tree() + geom_tiplab()
+     + geom_nodepoint(data=\"$tmpdir/lv.tsv\", colour=level)" \
+    -o "$tmpdir/join.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    # the key names every level exactly once, and carries the column title
+    for lv in compartment lineage group level; do
+        test "$(pdftotext "$tmpdir/join.pdf" - | grep -c "$lv")" -ge 1
+    done
+fi
+
+# A continuous column gets a colourbar rather than a key.
+printf 'tip\tacc\na\t0.1\nb\t0.9\nc\t0.5\nd\t0.3\n' >"$tmpdir/acc.tsv"
+"$CINDERPLOT" \
+    "$tmpdir/t.tre + geom_tree() + geom_tiplab(data=\"$tmpdir/acc.tsv\", colour=acc)" \
+    -o "$tmpdir/joincont.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/joincont.pdf" - | grep -q '0\.9'
+fi
+
+# The join needs a column to map, that column must exist, and it must not be
+# the key itself.
+if "$CINDERPLOT" "$tmpdir/t.tre + geom_tree() + geom_nodepoint(data=\"$tmpdir/lv.tsv\")" \
+    -o "$tmpdir/j1.pdf" 2>"$tmpdir/j1.err"; then
+    echo "geom_nodepoint without colour= unexpectedly succeeded" >&2
     exit 1
 fi
-grep 'cannot be joined to an external table' "$tmpdir/tj.err" >/dev/null
+grep 'needs colour=' "$tmpdir/j1.err" >/dev/null
+if "$CINDERPLOT" \
+    "$tmpdir/t.tre + geom_tree() + geom_nodepoint(data=\"$tmpdir/lv.tsv\", colour=node)" \
+    -o "$tmpdir/j2.pdf" 2>"$tmpdir/j2.err"; then
+    echo "colour= on the join key unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'is the join key' "$tmpdir/j2.err" >/dev/null
 
 # Malformed Newick is a bounded error, not a crash.
 printf '(a,b' >"$tmpdir/bad.tre"
