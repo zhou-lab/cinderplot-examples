@@ -746,4 +746,50 @@ grep 'turbo, coolwarm' "$tmpdir/palbad.err" >/dev/null
 "$CINDERPLOT" "$tmpdir/lv40.csv + aes(x,y,colour=g) + geom_point()" -o "$tmpdir/lv40.pdf"
 test -s "$tmpdir/lv40.pdf"
 
+# aspect= couples the figure's two dimensions so the MATRIX comes out at that
+# ratio -- the matrix, not a cell, so a non-square matrix under aspect=1 is
+# square overall with oblong cells.
+printf 'true\tC0\tC1\tC2\tC3\n' >"$tmpdir/wide.tsv"
+printf 'R0\t1\t2\t3\t4\nR1\t4\t3\t2\t1\n' >>"$tmpdir/wide.tsv"
+for a in 1 2; do
+    "$CINDERPLOT" \
+        "$tmpdir/wide.tsv + heatmap(cluster=none, rownames=none, colnames=none, aspect=$a)" \
+        -o "$tmpdir/asp-$a.pdf"
+    test -s "$tmpdir/asp-$a.pdf"
+done
+if command -v pdfinfo >/dev/null 2>&1; then
+    # no labels, so the page ratio is the matrix ratio plus equal margins
+    w1=$(pdfinfo "$tmpdir/asp-1.pdf" | awk '/Page size/{print int($3)}')
+    h1=$(pdfinfo "$tmpdir/asp-1.pdf" | awk '/Page size/{print int($5)}')
+    test "$w1" -eq "$h1"
+    w2=$(pdfinfo "$tmpdir/asp-2.pdf" | awk '/Page size/{print int($3)}')
+    h2=$(pdfinfo "$tmpdir/asp-2.pdf" | awk '/Page size/{print int($5)}')
+    test "$w2" -gt "$h2"
+fi
+
+# A partial --size fixes one side and aspect derives the other.
+"$CINDERPLOT" \
+    "$tmpdir/wide.tsv + heatmap(cluster=none, rownames=none, colnames=none, aspect=1)" \
+    --size 6x -o "$tmpdir/asp-part.pdf"
+if command -v pdfinfo >/dev/null 2>&1; then
+    wp=$(pdfinfo "$tmpdir/asp-part.pdf" | awk '/Page size/{print int($3)}')
+    hp=$(pdfinfo "$tmpdir/asp-part.pdf" | awk '/Page size/{print int($5)}')
+    test "$wp" -eq 432 && test "$wp" -eq "$hp"
+fi
+
+# ...but a fully specified --size already sets the proportions, so aspect= there
+# would be silently ignored. Refuse instead.
+if "$CINDERPLOT" "$tmpdir/wide.tsv + heatmap(cluster=none, aspect=1)" \
+    --size 5x5 -o "$tmpdir/asp-both.pdf" 2>"$tmpdir/asp-both.err"; then
+    echo "aspect= with a full --size unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'conflicts with a fully specified --size' "$tmpdir/asp-both.err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/wide.tsv + heatmap(aspect=0)" -o "$tmpdir/asp-z.pdf" \
+    2>"$tmpdir/asp-z.err"; then
+    echo "aspect=0 unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'positive number' "$tmpdir/asp-z.err" >/dev/null
+
 echo "all tests passed"
