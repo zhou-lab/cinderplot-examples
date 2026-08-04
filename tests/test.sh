@@ -831,4 +831,19 @@ if command -v pdfinfo >/dev/null 2>&1; then
     test "$ht" -gt 200
 fi
 
+# width= on a vertical placement (and height= on a horizontal one) used to be
+# parsed and dropped, because that axis is inherited from the anchor. Honour it.
+"$CINDERPLOT" \
+    "$tmpdir/share.tsv + heatmap(name=\"c\")
+     + heatmap(data=\"$tmpdir/share.tsv\", beneath(\"c\", pad=0.05), name=\"g\")" \
+    --size 4x5 -o "$tmpdir/pw-full.pdf"
+"$CINDERPLOT" \
+    "$tmpdir/share.tsv + heatmap(name=\"c\")
+     + heatmap(data=\"$tmpdir/share.tsv\", beneath(\"c\", pad=0.05, width=0.5), name=\"g\")" \
+    --size 4x5 -o "$tmpdir/pw-half.pdf"
+if cmp -s "$tmpdir/pw-full.pdf" "$tmpdir/pw-half.pdf"; then
+    echo "width= on beneath() was ignored" >&2
+    exit 1
+fi
+
 echo "all tests passed"
