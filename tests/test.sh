@@ -806,16 +806,15 @@ printf 'CLL (Gaiti 2019) [B cell] n=2439\t0.8\n' >>"$tmpdir/stackedmg.tsv"
     -o "$tmpdir/stacked.pdf"
 test -s "$tmpdir/stacked.pdf"
 
-# A size the caller PINNED that genuinely cannot hold the labels is still an
-# error -- and it now reports how much room they wanted.
-if "$CINDERPLOT" \
+# A layout that cannot hold its labels still RENDERS -- squeezed, with a warning
+# on stderr saying what gave. Refusing to draw is never the better answer: a
+# cramped figure is visibly cramped, a missing one breaks the pipeline.
+"$CINDERPLOT" \
     "$tmpdir/stackedlab.tsv + heatmap(name=\"m\", rownames=right, colnames=bottom)
      + annotation(\"$tmpdir/stackedmg.tsv\", right_of(\"m\")) + legend(right_of(\"m\"))" \
-    --size 1.5x1.5 -o "$tmpdir/stacked-small.pdf" 2>"$tmpdir/stacked-small.err"; then
-    echo "an impossible pinned size unexpectedly succeeded" >&2
-    exit 1
-fi
-grep 'they want' "$tmpdir/stacked-small.err" >/dev/null
+    --size 1.5x1.5 -o "$tmpdir/stacked-small.pdf" 2>"$tmpdir/stacked-small.err"
+test -s "$tmpdir/stacked-small.pdf"
+grep 'squeezed and may overlap' "$tmpdir/stacked-small.err" >/dev/null
 
 # aspect= must survive a title wider than the figure: the title sets the width,
 # so the height has to grow rather than the matrix stretching.
