@@ -792,4 +792,43 @@ if "$CINDERPLOT" "$tmpdir/wide.tsv + heatmap(aspect=0)" -o "$tmpdir/asp-z.pdf" \
 fi
 grep 'positive number' "$tmpdir/asp-z.err" >/dev/null
 
+# Auto-fit must SIZE the canvas for the inter-panel label gutters, not discover
+# afterwards that they do not fit and demand a --size it was asked to choose.
+printf 'grp\tEnterocyte.(Small.Intest)\tPancreatic.Islet.Cell\tEndothel.(Vascular)\n' \
+    >"$tmpdir/stackedlab.tsv"
+printf 'CRC LYMPH metastasis [Ent Co] n=299\t0.1\t0.2\t0.7\n' >>"$tmpdir/stackedlab.tsv"
+printf 'CLL (Gaiti 2019) [B cell] n=2439\t0.3\t0.6\t0.1\n' >>"$tmpdir/stackedlab.tsv"
+printf 'mg\tv\nCRC LYMPH metastasis [Ent Co] n=299\t0.4\n' >"$tmpdir/stackedmg.tsv"
+printf 'CLL (Gaiti 2019) [B cell] n=2439\t0.8\n' >>"$tmpdir/stackedmg.tsv"
+"$CINDERPLOT" \
+    "$tmpdir/stackedlab.tsv + heatmap(name=\"m\", rownames=right, colnames=bottom)
+     + annotation(\"$tmpdir/stackedmg.tsv\", right_of(\"m\")) + legend(right_of(\"m\"))" \
+    -o "$tmpdir/stacked.pdf"
+test -s "$tmpdir/stacked.pdf"
+
+# A size the caller PINNED that genuinely cannot hold the labels is still an
+# error -- and it now reports how much room they wanted.
+if "$CINDERPLOT" \
+    "$tmpdir/stackedlab.tsv + heatmap(name=\"m\", rownames=right, colnames=bottom)
+     + annotation(\"$tmpdir/stackedmg.tsv\", right_of(\"m\")) + legend(right_of(\"m\"))" \
+    --size 1.5x1.5 -o "$tmpdir/stacked-small.pdf" 2>"$tmpdir/stacked-small.err"; then
+    echo "an impossible pinned size unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'they want' "$tmpdir/stacked-small.err" >/dev/null
+
+# aspect= must survive a title wider than the figure: the title sets the width,
+# so the height has to grow rather than the matrix stretching.
+"$CINDERPLOT" \
+    "$tmpdir/wide.tsv + heatmap(cluster=none, rownames=none, colnames=none, aspect=1)
+     + labs(title=\"a title considerably wider than this small matrix would ever be\")" \
+    -o "$tmpdir/asp-title.pdf"
+if command -v pdfinfo >/dev/null 2>&1; then
+    wt=$(pdfinfo "$tmpdir/asp-title.pdf" | awk '/Page size/{print int($3)}')
+    ht=$(pdfinfo "$tmpdir/asp-title.pdf" | awk '/Page size/{print int($5)}')
+    # the title widened the page, so the page is no longer square -- but the
+    # height must have grown with it rather than staying put
+    test "$ht" -gt 200
+fi
+
 echo "all tests passed"
