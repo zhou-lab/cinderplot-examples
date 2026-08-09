@@ -892,4 +892,14 @@ test -s "$tmpdir/bx-off.pdf"
     echo "outlier.shape=17 unexpectedly succeeded" >&2; exit 1; }
 grep 'only NA/FALSE' "$tmpdir/bx17.err" >/dev/null
 
+# A spurious fontconfig warning on every run trains the reader to ignore stderr,
+# which is where the real messages go. A successful render says nothing but the
+# output line.
+"$CINDERPLOT" "$tmpdir/jit.csv + aes(factor(g), v) + geom_boxplot()" \
+    -o "$tmpdir/quiet.pdf" 2>"$tmpdir/quiet.err"
+if grep -q 'Fontconfig error' "$tmpdir/quiet.err"; then
+    echo "a spurious fontconfig warning reached stderr" >&2
+    exit 1
+fi
+
 echo "all tests passed"
