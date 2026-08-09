@@ -845,4 +845,51 @@ if cmp -s "$tmpdir/pw-full.pdf" "$tmpdir/pw-half.pdf"; then
     exit 1
 fi
 
+# geom_jitter(): points with a deterministic random offset, layerable over a
+# boxplot. On a discrete axis geom_point() stacks every observation on the
+# category centre, so 400 of them look like 40.
+printf 'g,v\n' >"$tmpdir/jit.csv"
+i=1; while [ "$i" -le 60 ]; do
+    printf 'a,0.%s\nb,0.%s\n' "$((i % 10))" "$(((i * 3) % 10))" >>"$tmpdir/jit.csv"
+    i=$((i + 1))
+done
+"$CINDERPLOT" "$tmpdir/jit.csv + aes(factor(g), v) + geom_jitter(width=0.2)" \
+    -o "$tmpdir/jit1.png" --dpi 72
+"$CINDERPLOT" "$tmpdir/jit.csv + aes(factor(g), v) + geom_jitter(width=0.2)" \
+    -o "$tmpdir/jit2.png" --dpi 72
+# reproducible: these figures are rebuilt from a notebook, so a plot that moved
+# every render would be a bug, not a nicety
+cmp "$tmpdir/jit1.png" "$tmpdir/jit2.png"
+# ...and it really is jittered, not just geom_point under another name
+"$CINDERPLOT" "$tmpdir/jit.csv + aes(factor(g), v) + geom_point()" \
+    -o "$tmpdir/jitp.png" --dpi 72
+if cmp -s "$tmpdir/jit1.png" "$tmpdir/jitp.png"; then
+    echo "geom_jitter() drew the same thing as geom_point()" >&2
+    exit 1
+fi
+# seed= picks a different arrangement
+"$CINDERPLOT" "$tmpdir/jit.csv + aes(factor(g), v) + geom_jitter(width=0.2, seed=7)" \
+    -o "$tmpdir/jit3.png" --dpi 72
+if cmp -s "$tmpdir/jit1.png" "$tmpdir/jit3.png"; then
+    echo "seed= did not change the jitter" >&2
+    exit 1
+fi
+"$CINDERPLOT" "$tmpdir/jit.csv + aes(factor(g), v) + geom_jitter(width=-1)" \
+    -o "$tmpdir/jitbad.png" 2>"$tmpdir/jitbad.err" && {
+    echo "a negative jitter width unexpectedly succeeded" >&2; exit 1; }
+grep 'non-negative' "$tmpdir/jitbad.err" >/dev/null
+
+# geom_boxplot(outlier.shape=NA) hides the outlier marks, which a jitter layer
+# has already drawn.
+"$CINDERPLOT" "$tmpdir/jit.csv + aes(factor(g), v) + geom_boxplot()" \
+    -o "$tmpdir/bx-on.pdf"
+"$CINDERPLOT" "$tmpdir/jit.csv + aes(factor(g), v) + geom_boxplot(outlier.shape=NA)" \
+    -o "$tmpdir/bx-off.pdf"
+test -s "$tmpdir/bx-off.pdf"
+# a shape we cannot draw is refused rather than silently ignored
+"$CINDERPLOT" "$tmpdir/jit.csv + aes(factor(g), v) + geom_boxplot(outlier.shape=17)" \
+    -o "$tmpdir/bx17.pdf" 2>"$tmpdir/bx17.err" && {
+    echo "outlier.shape=17 unexpectedly succeeded" >&2; exit 1; }
+grep 'only NA/FALSE' "$tmpdir/bx17.err" >/dev/null
+
 echo "all tests passed"
