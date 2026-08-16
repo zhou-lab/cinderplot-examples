@@ -902,4 +902,41 @@ if grep -q 'Fontconfig error' "$tmpdir/quiet.err"; then
     exit 1
 fi
 
+# facet_wrap(ncol=/nrow=): the caller choosing the grid shape. At 8 panels the
+# automatic layout wraps 3 per row, which splits the pairs a two-factor figure
+# exists to compare; no levels= ordering can fix that.
+printf 'p,x,y\n' >"$tmpdir/f8.csv"
+for c in c1 c2 c3 c4; do
+    for m in mA mB; do
+        printf '%s-%s,1,1\n%s-%s,2,2\n' "$c" "$m" "$c" "$m" >>"$tmpdir/f8.csv"
+    done
+done
+for opt in "ncol=2" "nrow=2"; do
+    "$CINDERPLOT" "$tmpdir/f8.csv + aes(x,y) + geom_point() + facet_wrap(~p, $opt)" \
+        -o "$tmpdir/fw-$opt.pdf"
+    test -s "$tmpdir/fw-$opt.pdf"
+done
+# a 2-column grid is taller than the automatic one, and taller than 4 columns
+"$CINDERPLOT" "$tmpdir/f8.csv + aes(x,y) + geom_point() + facet_wrap(~p, ncol=4)" \
+    -o "$tmpdir/fw-4.pdf"
+if command -v pdfinfo >/dev/null 2>&1; then
+    h2=$(pdfinfo "$tmpdir/fw-ncol=2.pdf" | awk '/Page size/{print int($5)}')
+    h4=$(pdfinfo "$tmpdir/fw-4.pdf" | awk '/Page size/{print int($5)}')
+    test "$h2" -ge "$h4"
+fi
+# a grid too small to hold the panels is an error, not a silent truncation
+if "$CINDERPLOT" \
+    "$tmpdir/f8.csv + aes(x,y) + geom_point() + facet_wrap(~p, ncol=2, nrow=3)" \
+    -o "$tmpdir/fw-small.pdf" 2>"$tmpdir/fw-small.err"; then
+    echo "an undersized facet grid unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'but there are 8' "$tmpdir/fw-small.err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/f8.csv + aes(x,y) + geom_point() + facet_wrap(~p, ncol=0)" \
+    -o "$tmpdir/fw-zero.pdf" 2>"$tmpdir/fw-zero.err"; then
+    echo "ncol=0 unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'positive whole number' "$tmpdir/fw-zero.err" >/dev/null
+
 echo "all tests passed"
