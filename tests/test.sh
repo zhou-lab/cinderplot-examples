@@ -939,4 +939,47 @@ if "$CINDERPLOT" "$tmpdir/f8.csv + aes(x,y) + geom_point() + facet_wrap(~p, ncol
 fi
 grep 'positive whole number' "$tmpdir/fw-zero.err" >/dev/null
 
+# aes(shape=): a second discrete factor on a scatter, mapped to point glyphs.
+# colour alone can carry one factor or the other, not both, and the pairing is
+# usually what the figure is for.
+printf 'x,y,g,h\n' >"$tmpdir/shp.csv"
+i=1; while [ "$i" -le 24 ]; do
+    printf '%s,%s,g%s,h%s\n' "$i" "$((i % 7))" "$((i % 3))" "$((i % 4))" >>"$tmpdir/shp.csv"
+    i=$((i + 1))
+done
+"$CINDERPLOT" "$tmpdir/shp.csv + aes(x,y,shape=g) + geom_point()" -o "$tmpdir/sh1.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/sh1.pdf" - | grep -q g0     # the shape legend names its levels
+fi
+# the glyphs really differ -- not circles under another name
+"$CINDERPLOT" "$tmpdir/shp.csv + aes(x,y) + geom_point()" -o "$tmpdir/sh0.pdf"
+if cmp -s "$tmpdir/sh0.pdf" "$tmpdir/sh1.pdf"; then
+    echo "aes(shape=) drew plain circles" >&2
+    exit 1
+fi
+# shape and colour carry different factors at once
+"$CINDERPLOT" "$tmpdir/shp.csv + aes(x,y,shape=g,colour=h) + geom_point()" \
+    -o "$tmpdir/sh2.pdf"
+test -s "$tmpdir/sh2.pdf"
+
+# Six glyphs, like ggplot2 -- past that they stop being tellable apart, so it
+# refuses rather than inventing a seventh.
+printf 'x,y,g\n' >"$tmpdir/sh7.csv"
+i=0; while [ "$i" -le 6 ]; do
+    printf '1,1,lv%s\n' "$i" >>"$tmpdir/sh7.csv"; i=$((i + 1))
+done
+if "$CINDERPLOT" "$tmpdir/sh7.csv + aes(x,y,shape=g) + geom_point()" \
+    -o "$tmpdir/sh7.pdf" 2>"$tmpdir/sh7.err"; then
+    echo "a 7-level shape mapping unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'shape palette holds 6' "$tmpdir/sh7.err" >/dev/null
+# and it needs somewhere to put the glyphs
+if "$CINDERPLOT" "$tmpdir/shp.csv + aes(x,y,shape=g) + geom_line()" \
+    -o "$tmpdir/shl.pdf" 2>"$tmpdir/shl.err"; then
+    echo "aes(shape=) without a point layer unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'needs a point layer' "$tmpdir/shl.err" >/dev/null
+
 echo "all tests passed"
