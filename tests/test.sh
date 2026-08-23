@@ -1036,4 +1036,44 @@ fi
     -o "$tmpdir/br2.pdf" 2>"$tmpdir/br2.err"
 grep 'lies outside the data range' "$tmpdir/br2.err" >/dev/null
 
+# ---- scale_x_log2 / scale_y_log2 -------------------------------------------
+# A coverage ladder sampled at powers of two: a log10 axis spaces these
+# correctly but labels them off-rung, which is the whole point of log2.
+printf 'n,frac\n' >"$tmpdir/lad.csv"
+n=1024
+while [ "$n" -le 4194304 ]; do
+    printf '%s,0.5\n' "$n" >>"$tmpdir/lad.csv"
+    n=$((n * 2))
+done
+
+"$CINDERPLOT" "$tmpdir/lad.csv + aes(n,frac) + geom_point() + scale_x_log2()" \
+    -o "$tmpdir/log2x.pdf"
+test -s "$tmpdir/log2x.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    # ticks must land ON the sampled powers: 2^10, 2^12, ... 2^22 (thinned by 2)
+    got=$(pdftotext "$tmpdir/log2x.pdf" - | tr -cd '0-9\n' | tr -d '\n')
+    case "$got" in
+        *210212214216218220222*) ;;
+        *) echo "log2 x ticks are not the powers of two: $got" >&2; exit 1;;
+    esac
+fi
+
+"$CINDERPLOT" "$tmpdir/lad.csv + aes(frac,n) + geom_point() + scale_y_log2()" \
+    -o "$tmpdir/log2y.pdf"
+test -s "$tmpdir/log2y.pdf"
+
+# limits= applies in data space, exactly as it does for log10
+"$CINDERPLOT" "$tmpdir/lad.csv + aes(n,frac) + geom_point() + scale_x_log2(limits=c(1024,65536))" \
+    -o "$tmpdir/log2lim.pdf"
+test -s "$tmpdir/log2lim.pdf"
+
+# a discrete axis cannot be logged, and the message must name the base asked for
+printf 'g,y\na,1\nb,2\n' >"$tmpdir/disc.csv"
+if "$CINDERPLOT" "$tmpdir/disc.csv + aes(g,y) + geom_point() + scale_x_log2()" \
+        -o "$tmpdir/log2bad.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "scale_x_log2 on a discrete x unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'scale_x_log2() needs a continuous x' "$tmpdir/err" >/dev/null
+
 echo "all tests passed"
