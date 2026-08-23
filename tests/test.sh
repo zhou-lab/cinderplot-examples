@@ -982,4 +982,58 @@ if "$CINDERPLOT" "$tmpdir/shp.csv + aes(x,y,shape=g) + geom_line()" \
 fi
 grep 'needs a point layer' "$tmpdir/shl.err" >/dev/null
 
+# geom_smooth(): a LOESS trend through noisy points, one per colour group.
+printf 'x,y,g\n' >"$tmpdir/sm.csv"
+i=1; while [ "$i" -le 80 ]; do
+    printf '%s,%s,a\n%s,%s,b\n' "$i" "$((i % 7))" "$i" "$((i % 5 + 3))" >>"$tmpdir/sm.csv"
+    i=$((i + 1))
+done
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + geom_smooth(se=FALSE)" \
+    -o "$tmpdir/sm1.pdf"
+test -s "$tmpdir/sm1.pdf"
+# the smooth is not the raw series: a smaller span tracks the data more closely,
+# so the two spans must differ
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_smooth(se=FALSE, span=0.2)" \
+    -o "$tmpdir/sm2.pdf"
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_smooth(se=FALSE, span=0.9)" \
+    -o "$tmpdir/sm3.pdf"
+if cmp -s "$tmpdir/sm2.pdf" "$tmpdir/sm3.pdf"; then
+    echo "span= did not change the fit" >&2
+    exit 1
+fi
+# one curve per colour group, not one through everything
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y,colour=g) + geom_smooth(se=FALSE)" \
+    -o "$tmpdir/sm4.pdf"
+if cmp -s "$tmpdir/sm1.pdf" "$tmpdir/sm4.pdf"; then
+    echo "grouping did not change the smooth" >&2
+    exit 1
+fi
+# ggplot defaults se=TRUE and the ribbon is absent, so silence is refused rather
+# than quietly drawing less than was asked for
+if "$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_smooth()" \
+    -o "$tmpdir/sm5.pdf" 2>"$tmpdir/sm5.err"; then
+    echo "bare geom_smooth() unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'se=FALSE' "$tmpdir/sm5.err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_smooth(se=FALSE, span=0)" \
+    -o "$tmpdir/sm6.pdf" 2>"$tmpdir/sm6.err"; then
+    echo "span=0 unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'fraction in (0, 1]' "$tmpdir/sm6.err" >/dev/null
+
+# scale_*_continuous(breaks=): explicit ticks, for when the automatic ones are
+# chosen for count and collide on width (a genomic coordinate, say).
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + scale_x_continuous(breaks=c(20,40,60))" \
+    -o "$tmpdir/br.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    got=$(pdftotext "$tmpdir/br.pdf" - | tr -cd '0-9\n' | tr -d '\n')
+    case "$got" in *204060*) ;; *) echo "explicit breaks did not reach the axis" >&2; exit 1;; esac
+fi
+# every break outside the range leaves an unlabelled axis, which is worth saying
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + scale_x_continuous(breaks=c(5000))" \
+    -o "$tmpdir/br2.pdf" 2>"$tmpdir/br2.err"
+grep 'lies outside the data range' "$tmpdir/br2.err" >/dev/null
+
 echo "all tests passed"
