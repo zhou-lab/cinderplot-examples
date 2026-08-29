@@ -1076,4 +1076,61 @@ if "$CINDERPLOT" "$tmpdir/disc.csv + aes(g,y) + geom_point() + scale_x_log2()" \
 fi
 grep 'scale_x_log2() needs a continuous x' "$tmpdir/err" >/dev/null
 
+# ---- heatmap(grid=) --------------------------------------------------------
+# Separators BETWEEN the cells (geom_tile(colour=) is the ggplot2 idea);
+# box= only frames the block. PNG, not PDF: cairo stamps a whole-second
+# /CreationDate inside a compressed PDF stream, so two PDFs can differ (or
+# agree) on the clock alone, and this comparison must see only the ink.
+printf 'id\ta\tb\tc\ns1\t0.1\t0.5\t0.9\ns2\t0.9\t0.2\t0.4\ns3\t0.3\t0.8\t0.6\n' >"$tmpdir/hm.tsv"
+"$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none, grid=\"grey70\")" \
+    --size 4x3 -o "$tmpdir/grid.png"
+"$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none)" \
+    --size 4x3 -o "$tmpdir/nogrid.png"
+if cmp -s "$tmpdir/grid.png" "$tmpdir/nogrid.png"; then
+    echo "grid= drew nothing" >&2
+    exit 1
+fi
+
+# a bad value errors rather than parsing and vanishing
+if "$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(grid=bogus)" -o "$tmpdir/gbad.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "grid=bogus unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'grid=bogus invalid' "$tmpdir/err" >/dev/null
+
+# grid= on a legend() errors, as box= does
+if "$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(name=\"h\", cluster=none) + legend(right_of(\"h\"), grid=on)" \
+        -o "$tmpdir/gleg.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "grid= on legend() unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'grid= applies to heatmap() and annotation()' "$tmpdir/err" >/dev/null
+
+# under ~4pt of cell the separators would out-ink the fills: dropped, with a
+# warning, not drawn
+awk 'BEGIN{OFS="\t"; printf "id"; for(c=1;c<=300;c++) printf "\tc%d",c; print "";
+  for(r=1;r<=300;r++){printf "r%d",r; for(c=1;c<=300;c++) printf "\t%.3f",(r*c%97)/97; print ""}}' \
+    >"$tmpdir/hmbig.tsv"
+"$CINDERPLOT" "$tmpdir/hmbig.tsv + heatmap(cluster=none, grid=on)" \
+    --size 4x4 -o "$tmpdir/gbig.pdf" 2>"$tmpdir/err"
+grep 'grid= dropped' "$tmpdir/err" >/dev/null
+
+# ---- --font ----------------------------------------------------------------
+# Cairo substitutes a missing family silently, so cinderplot must say so; the
+# figure still renders (in the fallback), because a wrong font should not
+# break a pipeline.
+"$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none)" \
+    --font "no-such-family-cinderplot-test" -o "$tmpdir/font.pdf" 2>"$tmpdir/err"
+test -s "$tmpdir/font.pdf"
+grep 'not found' "$tmpdir/err" >/dev/null
+
+# --font as the final token is a missing argument, not an unknown flag
+if "$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none)" -o "$tmpdir/font2.pdf" --font \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "trailing --font unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'missing argument for --font' "$tmpdir/err" >/dev/null
+
 echo "all tests passed"
