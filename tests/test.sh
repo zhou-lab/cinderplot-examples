@@ -1133,4 +1133,46 @@ if "$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none)" -o "$tmpdir/font2.pdf"
 fi
 grep 'missing argument for --font' "$tmpdir/err" >/dev/null
 
+# ---- heatmap(labels=) -------------------------------------------------------
+# Per-cell value text. labels= used to be consumed only by annotation(), so on
+# a heatmap it parsed and silently vanished.
+"$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none, labels=on)" \
+    --size 4x3 -o "$tmpdir/lab.png"
+if cmp -s "$tmpdir/lab.png" "$tmpdir/nogrid.png"; then
+    echo "labels= drew nothing" >&2
+    exit 1
+fi
+# under 4pt of text the numbers are decoration: dropped, with a warning
+"$CINDERPLOT" "$tmpdir/hmbig.tsv + heatmap(cluster=none, labels=on)" \
+    --size 4x4 -o "$tmpdir/labbig.pdf" 2>"$tmpdir/err"
+grep 'labels= dropped' "$tmpdir/err" >/dev/null
+
+# ---- geom_rect(data=) with y/yend: 4-corner rects, mapped fill --------------
+# The region-band reading used to hijack 4-corner layer files: grey full-height
+# bands, any fill mapping silently gone.
+printf 'x,y,xmax,ymax,v\n1,1,2,2,5\n3,3,4,4,50\n' >"$tmpdir/rl.csv"
+printf 'x,y,xmax,ymax,v\n1.5,1.5,1.5,1.5,5\n3.5,3.5,3.5,3.5,50\n' >"$tmpdir/rm.csv"
+# rect-only layers, no legend: any pixel difference is the rect fill itself
+# (a geom_point would take the mapped colour too and mask the rect bug)
+"$CINDERPLOT" "$tmpdir/rm.csv + aes(x=x, y=y, xend=xmax, yend=ymax, fill=v) + geom_rect(data=\"$tmpdir/rl.csv\")" \
+    --no-legend --size 4x3 -o "$tmpdir/r1.png"
+"$CINDERPLOT" "$tmpdir/rm.csv + aes(x=x, y=y, xend=xmax, yend=ymax) + geom_rect(data=\"$tmpdir/rl.csv\")" \
+    --size 4x3 -o "$tmpdir/r2.png"
+if cmp -s "$tmpdir/r1.png" "$tmpdir/r2.png"; then
+    echo "rect layer fill mapping drew nothing" >&2
+    exit 1
+fi
+# a mapped colour/fill whose column is missing from the layer file errors
+printf 'x,xmax\n2,3\n' >"$tmpdir/rb.csv"
+if "$CINDERPLOT" "$tmpdir/rm.csv + aes(x=x, y=y, xend=xmax, fill=v) + geom_rect(data=\"$tmpdir/rb.csv\") + geom_point()" \
+        -o "$tmpdir/r3.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "missing layer fill column unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'not in this file' "$tmpdir/err" >/dev/null
+# a layer file without y/yend keeps the region-band reading
+"$CINDERPLOT" "$tmpdir/rm.csv + aes(x=x, y=y, xend=xmax) + geom_rect(data=\"$tmpdir/rb.csv\") + geom_point()" \
+    -o "$tmpdir/r4.pdf"
+test -s "$tmpdir/r4.pdf"
+
 echo "all tests passed"
