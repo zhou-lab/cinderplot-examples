@@ -1175,4 +1175,48 @@ grep 'not in this file' "$tmpdir/err" >/dev/null
     -o "$tmpdir/r4.pdf"
 test -s "$tmpdir/r4.pdf"
 
+# ---- scale_fill_*(limits=) in heatmap mode ---------------------------------
+# limits= pins the fill domain so several figures share one ramp; it used to
+# be silently ignored, each matrix autoscaling to its own min/max.
+"$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none) + scale_fill_viridis(limits=c(0,100))" \
+    --size 4x3 -o "$tmpdir/lim.png"
+"$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none) + scale_fill_viridis()" \
+    --size 4x3 -o "$tmpdir/nolim.png"
+if cmp -s "$tmpdir/lim.png" "$tmpdir/nolim.png"; then
+    echo "limits= did not move the fill domain" >&2
+    exit 1
+fi
+# reversed limits are an error, not garbage
+if "$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none) + scale_fill_viridis(limits=c(100,0))" \
+        -o "$tmpdir/lim2.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "limits=c(100,0) unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'limits= expects lo < hi' "$tmpdir/err" >/dev/null
+
+# ---- highlight() -----------------------------------------------------------
+# a bounding box on one cell, addressed by row/column name
+"$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none) + highlight(\"s2\", \"b\")" \
+    --size 4x3 -o "$tmpdir/hl.png"
+"$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none)" \
+    --size 4x3 -o "$tmpdir/nohl.png"
+if cmp -s "$tmpdir/hl.png" "$tmpdir/nohl.png"; then
+    echo "highlight() drew nothing" >&2
+    exit 1
+fi
+# an unknown name errors rather than drawing nothing
+if "$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none) + highlight(\"nope\", \"b\")" \
+        -o "$tmpdir/hl2.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "highlight() with a bad row name unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'not a row name' "$tmpdir/err" >/dev/null
+# highlight() outside heatmap mode errors
+if "$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + highlight(\"a\", \"b\")" \
+        -o "$tmpdir/hl3.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "highlight() in grammar mode unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'needs heatmap mode' "$tmpdir/err" >/dev/null
+
 echo "all tests passed"
