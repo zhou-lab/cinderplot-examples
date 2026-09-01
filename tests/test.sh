@@ -1219,4 +1219,45 @@ if "$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + highlight(\"a\", \"
 fi
 grep 'needs heatmap mode' "$tmpdir/err" >/dev/null
 
+# ---- stacked geom_col(fill=) ------------------------------------------------
+# ggplot's default position for geom_col: a varying discrete fill stacks
+# (it used to error with "stacking or dodging is not implemented")
+printf 'donor,pct,predicted\nB01,42,Naive\nB01,44,Mem\nB01,14,other\nB02,60,Naive\nB02,40,Mem\n' >"$tmpdir/st.csv"
+"$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=predicted) + geom_col()" \
+    -o "$tmpdir/st.pdf"
+test -s "$tmpdir/st.pdf"
+# negative values refuse to stack rather than draw overlapping segments
+printf 'x,pct,cls\na,5,u\na,-2,v\n' >"$tmpdir/stneg.csv"
+if "$CINDERPLOT" "$tmpdir/stneg.csv + aes(x=factor(x), y=pct, fill=cls) + geom_col()" \
+        -o "$tmpdir/stneg.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "negative stacked geom_col unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'negative values' "$tmpdir/err" >/dev/null
+# a varying fill on a continuous x has no category to stack within
+printf 'x,pct,cls\n1,5,u\n1,2,v\n' >"$tmpdir/stx.csv"
+if "$CINDERPLOT" "$tmpdir/stx.csv + aes(x=x, y=pct, fill=cls) + geom_col()" \
+        -o "$tmpdir/stx.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "stacked geom_col on continuous x unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'needs a discrete x' "$tmpdir/err" >/dev/null
+
+# ---- scale_*_continuous(labels=c(...)) --------------------------------------
+# explicit tick text paired with breaks=, so a category label row can BE the
+# axis (labels=c used to error with "supported: percent")
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + scale_x_continuous(breaks=c(20,40,60), labels=c(\"low\",\"mid\",\"high\"))" \
+    -o "$tmpdir/xl.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/xl.pdf" - | grep 'low' >/dev/null || {
+        echo "labels=c(...) text did not reach the axis" >&2; exit 1; }
+fi
+# labels without matching breaks is an error, not recycling
+if "$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + scale_x_continuous(breaks=c(20,40), labels=c(\"a\"))" \
+        -o "$tmpdir/xl2.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "mismatched labels=/breaks= unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'same length' "$tmpdir/err" >/dev/null
+
 echo "all tests passed"
