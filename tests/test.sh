@@ -1260,4 +1260,50 @@ if "$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + scale_x_continuous(
 fi
 grep 'same length' "$tmpdir/err" >/dev/null
 
+# ---- grammar-mode annotation() ---------------------------------------------
+# a categorical metadata band under the panel, keyed by x category, own
+# palette and legend (0.11.0 refused annotation() beside aes()/geom_*)
+printf 'donor,ighv\nB01,normal\nB02,M\n' >"$tmpdir/am.csv"
+"$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=predicted) + geom_col() + annotation(\"$tmpdir/am.csv\")" \
+    -o "$tmpdir/ann.pdf"
+test -s "$tmpdir/ann.pdf"
+# placements are heatmap-mode; under a grammar panel they error
+if "$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=predicted) + geom_col() + annotation(\"$tmpdir/am.csv\", left_of(\"x\"))" \
+        -o "$tmpdir/ann2.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "grammar annotation() with a placement unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'placements' "$tmpdir/err" >/dev/null
+# it keys on x categories, so a continuous x errors
+if "$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + annotation(\"$tmpdir/am.csv\")" \
+        -o "$tmpdir/ann3.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "grammar annotation() on continuous x unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'discrete x' "$tmpdir/err" >/dev/null
+# a category with no metadata row warns and draws NA grey
+printf 'donor,ighv\nB01,normal\n' >"$tmpdir/am2.csv"
+"$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=predicted) + geom_col() + annotation(\"$tmpdir/am2.csv\")" \
+    -o "$tmpdir/ann4.pdf" 2>"$tmpdir/err"
+grep 'have no row' "$tmpdir/err" >/dev/null
+
+# ---- breaks=/labels= hold a hand-built category axis (cap 256, was 40) -----
+brk=$(python3 -c "print(','.join(str(i) for i in range(1,64)))")
+lbs=$(python3 -c "print(','.join('\"c%d\"' % i for i in range(1,64)))")
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + scale_y_continuous(breaks=c($brk), labels=c($lbs))" \
+    -o "$tmpdir/br63.pdf"
+test -s "$tmpdir/br63.pdf"
+
+# ---- continuous fill on geom_col() -----------------------------------------
+# each bar mapped through the gradient, as geom_rect() long has; geom_bar()
+# still refuses (it counts rows itself, so no single value per bar)
+"$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=pct) + geom_col() + guides(colour=\"none\")" \
+    --size 4x3 -o "$tmpdir/cfill.png"
+"$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct) + geom_col()" \
+    --size 4x3 -o "$tmpdir/cfill0.png"
+if cmp -s "$tmpdir/cfill.png" "$tmpdir/cfill0.png"; then
+    echo "continuous fill on geom_col drew nothing" >&2
+    exit 1
+fi
+
 echo "all tests passed"
