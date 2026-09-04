@@ -1336,4 +1336,17 @@ grep 'continuous ramp' "$tmpdir/err" >/dev/null
     -o "$tmpdir/br5.pdf"
 test -s "$tmpdir/br5.pdf"
 
+# ---- geom_boxplot: fill= colours the body, colour= the chrome ---------------
+# one shared aes carries both spellings; the recorded spelling decides, as in
+# ggplot2 (fill= used to silently render the colour= look)
+printf 'g,v\na,1\na,2\na,3\na,4\nb,2\nb,3\nb,4\nb,5\n' >"$tmpdir/bx.csv"
+"$CINDERPLOT" "$tmpdir/bx.csv + aes(x=factor(g), y=v, fill=factor(g)) + geom_boxplot()" \
+    --size 4x3 -o "$tmpdir/bxf.png"
+"$CINDERPLOT" "$tmpdir/bx.csv + aes(x=factor(g), y=v, colour=factor(g)) + geom_boxplot()" \
+    --size 4x3 -o "$tmpdir/bxc.png"
+if cmp -s "$tmpdir/bxf.png" "$tmpdir/bxc.png"; then
+    echo "boxplot fill= and colour= render identically" >&2
+    exit 1
+fi
+
 echo "all tests passed"
