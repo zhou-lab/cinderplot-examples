@@ -340,7 +340,7 @@ if "$CINDERPLOT" "$tmpdir/fs.csv + aes(x,y) + geom_point() + facet_wrap(~p, scal
     echo "scales=nope unexpectedly succeeded" >&2
     exit 1
 fi
-grep 'use fixed, free_x, free_y, or free' "$tmpdir/fs-bad.err" >/dev/null
+grep 'use fixed, free_x, free_y, free, or free_colour' "$tmpdir/fs-bad.err" >/dev/null
 
 # A discrete axis is no longer capped at 40 categories.
 { printf 'k,y\n'; i=1; while [ "$i" -le 60 ]; do printf 'cat%s,%s\n' "$i" "$i"; i=$((i+1)); done; } \
@@ -1348,5 +1348,135 @@ if cmp -s "$tmpdir/bxf.png" "$tmpdir/bxc.png"; then
     echo "boxplot fill= and colour= render identically" >&2
     exit 1
 fi
+
+# ---- annotate(): one-off marks at literal coords ---------------------------
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + annotate(\"text\", x=30, y=15, label=\"here\") + annotate(\"segment\", x=20, y=10, xend=40, yend=20) + annotate(\"rect\", xmin=25, xmax=35, ymin=5, ymax=8)" \
+    -o "$tmpdir/anno.pdf"
+test -s "$tmpdir/anno.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/anno.pdf" - | grep 'here' >/dev/null || {
+        echo "annotate text did not reach the page" >&2; exit 1; }
+fi
+# each kind checks its required arguments
+if "$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + annotate(\"text\", x=1, y=1)" \
+        -o "$tmpdir/anno2.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "annotate text without label unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'needs x=, y= and label=' "$tmpdir/err" >/dev/null
+# hjust/vjust anchor the text; hjust=0 must move ink vs the centred default
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + annotate(\"text\", x=30, y=15, label=\"here\", hjust=0, vjust=0)" \
+    --size 4x3 -o "$tmpdir/annoj.png"
+"$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + annotate(\"text\", x=30, y=15, label=\"here\")" \
+    --size 4x3 -o "$tmpdir/annoc.png"
+if cmp -s "$tmpdir/annoj.png" "$tmpdir/annoc.png"; then
+    echo "annotate hjust/vjust changed nothing" >&2
+    exit 1
+fi
+# they belong on text only
+if "$CINDERPLOT" "$tmpdir/sm.csv + aes(x,y) + geom_point() + annotate(\"segment\", x=1, y=1, xend=2, yend=2, hjust=0)" \
+        -o "$tmpdir/annoj2.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "hjust on a segment unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'belong on annotate' "$tmpdir/err" >/dev/null
+# grammar mode only
+if "$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none) + annotate(\"text\", x=1, y=1, label=\"a\")" \
+        -o "$tmpdir/anno3.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "annotate in heatmap mode unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'grammar panel' "$tmpdir/err" >/dev/null
+
+# ---- brewer segfault regression, manual shortfall, identity ----------------
+# Paired/Set3 carry 12 stops; an 11-slot buffer dropped the 12th at compile
+# and made the lookup memcpy a stack smash (SIGSEGV on 0.15.0-pre)
+printf 'x,y,g\n1,1,a\n2,2,b\n' >"$tmpdir/pw.csv"
+"$CINDERPLOT" "$tmpdir/pw.csv + aes(x, y, colour=g) + geom_point() + scale_colour_brewer(palette=\"Paired\")" \
+    -o "$tmpdir/pw.pdf"
+test -s "$tmpdir/pw.pdf"
+# a positional manual list shorter than the factor errors (was silent grey)
+printf 'x,y,g\n1,1,a\n2,2,b\n3,3,c\n' >"$tmpdir/mm.csv"
+if "$CINDERPLOT" "$tmpdir/mm.csv + aes(x, y, colour=g) + geom_point() + scale_colour_manual(values=c(\"#ff0000\",\"#00ff00\"))" \
+        -o "$tmpdir/mm.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "short manual palette unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'has 3 levels' "$tmpdir/err" >/dev/null
+# scale_colour_identity: a hex column paints itself, and a non-colour errors
+printf 'x,y,h\n1,1,#e31a1c\n2,2,#1f78b4\n' >"$tmpdir/id.csv"
+"$CINDERPLOT" "$tmpdir/id.csv + aes(x, y, colour=h) + geom_point() + scale_colour_identity()" \
+    -o "$tmpdir/id.pdf"
+test -s "$tmpdir/id.pdf"
+printf 'x,y,h\n1,1,nope\n' >"$tmpdir/id2.csv"
+if "$CINDERPLOT" "$tmpdir/id2.csv + aes(x, y, colour=h) + geom_point() + scale_colour_identity()" \
+        -o "$tmpdir/id2.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "identity on a non-colour unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'is not a colour' "$tmpdir/err" >/dev/null
+# a pinned size too short for the legend stack warns instead of silent clip
+printf 'x,y,g\n' >"$tmpdir/l20.csv"
+i=0
+while [ "$i" -lt 20 ]; do printf '%d,%d,L%02d\n' "$i" "$i" "$i" >>"$tmpdir/l20.csv"; i=$((i+1)); done
+"$CINDERPLOT" "$tmpdir/l20.csv + aes(x, y, colour=g) + geom_point()" \
+    --size 4x2.5 -o "$tmpdir/l20.pdf" 2>"$tmpdir/err"
+grep 'legend stack needs' "$tmpdir/err" >/dev/null
+
+# ---- facet_wrap(scales="free_colour"): per-facet colour scales -------------
+printf 'x,y,panel,v\n1,1,A,u\n2,2,A,w\n1,1,B,m\n2,2,B,n\n3,3,B,o\n' >"$tmpdir/fcl.csv"
+"$CINDERPLOT" "$tmpdir/fcl.csv + aes(x, y, colour=v) + geom_point() + facet_wrap(~panel, scales=\"free_colour\")" \
+    -o "$tmpdir/fcl.pdf"
+test -s "$tmpdir/fcl.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    # each facet's legend block is titled by the facet name
+    pdftotext "$tmpdir/fcl.pdf" - | grep 'A' >/dev/null || {
+        echo "per-facet legend title missing" >&2; exit 1; }
+fi
+# needs facets and a discrete colour
+if "$CINDERPLOT" "$tmpdir/fcl.csv + aes(x, y, colour=v) + geom_point() + facet_wrap(~panel, scales=\"free_colour\") + scale_colour_identity()" \
+        -o "$tmpdir/fcl2.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "free_colour with identity unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'does nothing under' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/fcl.csv + aes(x, y) + geom_point() + facet_wrap(~panel, scales=\"free_colour\")" \
+        -o "$tmpdir/fcl3.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "free_colour without a colour aes unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'discrete colour' "$tmpdir/err" >/dev/null
+# a brewer set too small for ONE facet errors naming the facet
+printf 'x,y,panel,v\n' >"$tmpdir/fcl9.csv"
+i=0
+while [ "$i" -lt 10 ]; do printf '%d,%d,B,p%02d\n' "$i" "$i" "$i" >>"$tmpdir/fcl9.csv"; i=$((i+1)); done
+printf '1,1,A,u\n' >>"$tmpdir/fcl9.csv"
+if "$CINDERPLOT" "$tmpdir/fcl9.csv + aes(x, y, colour=v) + geom_point() + scale_colour_brewer(palette=\"Set2\") + facet_wrap(~panel, scales=\"free_colour\")" \
+        -o "$tmpdir/fcl4.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "over-large facet with a small brewer set unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'colour levels but the palette gives' "$tmpdir/err" >/dev/null
+
+# ---- guides(colour=guide_legend(ncol=/nrow=)) ------------------------------
+# folding must change the ink (two columns vs one); both keys at once error
+"$CINDERPLOT" "$tmpdir/l20.csv + aes(x, y, colour=g) + geom_point() + guides(colour=guide_legend(ncol=2))" \
+    --size 6x4 -o "$tmpdir/gl1.png"
+"$CINDERPLOT" "$tmpdir/l20.csv + aes(x, y, colour=g) + geom_point()" \
+    --size 6x4 -o "$tmpdir/gl2.png" 2>/dev/null
+if cmp -s "$tmpdir/gl1.png" "$tmpdir/gl2.png"; then
+    echo "guide_legend(ncol=2) changed nothing" >&2
+    exit 1
+fi
+if "$CINDERPLOT" "$tmpdir/l20.csv + aes(x, y, colour=g) + geom_point() + guides(colour=guide_legend(ncol=2, nrow=3))" \
+        -o "$tmpdir/gl3.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "ncol+nrow together unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'not both' "$tmpdir/err" >/dev/null
+# guides(colour="none") still works after the parser rework
+"$CINDERPLOT" "$tmpdir/l20.csv + aes(x, y, colour=g) + geom_point() + guides(colour=\"none\")" \
+    -o "$tmpdir/gl4.pdf"
+test -s "$tmpdir/gl4.pdf"
 
 echo "all tests passed"
