@@ -1306,4 +1306,34 @@ if cmp -s "$tmpdir/cfill.png" "$tmpdir/cfill0.png"; then
     exit 1
 fi
 
+# ---- ColorBrewer: scale_*_distiller / scale_*_brewer ------------------------
+# a named ramp; direction follows ggplot2 (-1 default), so direction=1 must
+# put different ink on the page
+"$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=pct) + geom_col() + scale_fill_distiller(palette=\"YlOrBr\")" \
+    --size 4x3 -o "$tmpdir/br1.png"
+"$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=pct) + geom_col() + scale_fill_distiller(palette=\"YlOrBr\", direction=1)" \
+    --size 4x3 -o "$tmpdir/br2.png"
+test -s "$tmpdir/br1.png"
+if cmp -s "$tmpdir/br1.png" "$tmpdir/br2.png"; then
+    echo "distiller direction= changed nothing" >&2
+    exit 1
+fi
+# a qualitative set is not a ramp, and a ramp is not a discrete set
+if "$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=pct) + geom_col() + scale_fill_distiller(palette=\"Set2\")" \
+        -o "$tmpdir/br3.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "qualitative palette as a ramp unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'qualitative set, not a ramp' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=predicted) + geom_col() + scale_fill_brewer(palette=\"YlOrBr\")" \
+        -o "$tmpdir/br4.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "sequential palette as a discrete set unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'continuous ramp' "$tmpdir/err" >/dev/null
+# discrete Set2 renders with distinct level colours
+"$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=predicted) + geom_col() + scale_fill_brewer(palette=\"Set2\")" \
+    -o "$tmpdir/br5.pdf"
+test -s "$tmpdir/br5.pdf"
+
 echo "all tests passed"
