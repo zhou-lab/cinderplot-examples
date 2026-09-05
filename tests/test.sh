@@ -1657,4 +1657,35 @@ if "$CINDERPLOT" "$tmpdir/tl.csv + aes(x=x, y=y, fill=v) + geom_tile(linewidth=0
 fi
 grep 'number > 0' "$tmpdir/err" >/dev/null
 
+# ---- expand= on the scales, coord_cartesian(expand=FALSE) ------------------
+printf 'x,y,v\na,r1,1\nb,r1,50\nc,r1,99\na,r2,80\nb,r2,20\nc,r2,60\n' >"$tmpdir/tl2.csv"
+"$CINDERPLOT" "$tmpdir/tl2.csv + aes(x=x, y=y, fill=v) + geom_tile() + scale_x_discrete(expand=c(0,0))" \
+    --size 4x2 -o "$tmpdir/ex1.png"
+"$CINDERPLOT" "$tmpdir/tl2.csv + aes(x=x, y=y, fill=v) + geom_tile()" \
+    --size 4x2 -o "$tmpdir/ex2.png"
+if cmp -s "$tmpdir/ex1.png" "$tmpdir/ex2.png"; then
+    echo "expand=c(0,0) changed nothing" >&2
+    exit 1
+fi
+# coord_cartesian(expand=FALSE) == zeroing both scales
+"$CINDERPLOT" "$tmpdir/tl2.csv + aes(x=x, y=y, fill=v) + geom_tile() + coord_cartesian(expand=FALSE)" \
+    --size 4x2 -o "$tmpdir/ex3.png"
+"$CINDERPLOT" "$tmpdir/tl2.csv + aes(x=x, y=y, fill=v) + geom_tile() + scale_x_discrete(expand=c(0,0)) + scale_y_discrete(expand=c(0,0))" \
+    --size 4x2 -o "$tmpdir/ex4.png"
+cmp -s "$tmpdir/ex3.png" "$tmpdir/ex4.png" || {
+    echo "coord_cartesian(expand=FALSE) differs from zeroed scales" >&2; exit 1; }
+# negative values refuse
+if "$CINDERPLOT" "$tmpdir/tl2.csv + aes(x=x, y=y, fill=v) + geom_tile() + scale_x_discrete(expand=c(-1,0))" \
+        -o "$tmpdir/ex5.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "negative expand unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'must be >= 0' "$tmpdir/err" >/dev/null
+# a single-row grid under expand=c(0,0) still spans its tile edges
+# (the expansion measures from the tile edge, so nothing collapses and
+# no outer cell is cut in half)
+"$CINDERPLOT" "$tmpdir/tl.csv + aes(x=x, y=y, fill=v) + geom_tile() + coord_cartesian(expand=FALSE)" \
+    -o "$tmpdir/ex6.pdf"
+test -s "$tmpdir/ex6.pdf"
+
 echo "all tests passed"
