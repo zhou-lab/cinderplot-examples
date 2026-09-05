@@ -1479,4 +1479,70 @@ grep 'not both' "$tmpdir/err" >/dev/null
     -o "$tmpdir/gl4.pdf"
 test -s "$tmpdir/gl4.pdf"
 
+# ---- angle= on annotate("text") and geom_text() ----------------------------
+printf 'site,pct,lab\nGI,100,g\nLN,88,l\n' >"$tmpdir/rot.csv"
+"$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct, label=lab) + geom_col() + geom_text(angle=90, hjust=0)" \
+    --size 3x4 -o "$tmpdir/rot1.png"
+"$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct, label=lab) + geom_col() + geom_text()" \
+    --size 3x4 -o "$tmpdir/rot2.png"
+if cmp -s "$tmpdir/rot1.png" "$tmpdir/rot2.png"; then
+    echo "geom_text(angle=) changed nothing" >&2
+    exit 1
+fi
+# the box and the repel geoms refuse rotation honestly
+if "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct, label=lab) + geom_label(angle=90)" \
+        -o "$tmpdir/rot3.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "geom_label(angle=) unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'does not rotate' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col() + annotate(\"text\", x=1, y=1, label=\"a\", angle=90, vjust=0)" \
+        -o "$tmpdir/rot4.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "annotate angle+vjust unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'vjust= with angle=' "$tmpdir/err" >/dev/null
+
+# ---- --editable-svg: labels as <text>, svglite-style ------------------------
+"$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct, label=lab) + geom_col() + geom_text(angle=90, hjust=0)" \
+    --editable-svg -o "$tmpdir/ed.svg"
+grep -c "<text" "$tmpdir/ed.svg" >/dev/null || {
+    echo "editable svg has no <text> elements" >&2; exit 1; }
+# the property downstream tools choke on must never occur
+if grep -q "dx=" "$tmpdir/ed.svg"; then
+    echo "editable svg contains dx= lists" >&2
+    exit 1
+fi
+# the default svg keeps glyph outlines (portability unchanged); force the
+# env var off, since the runner may have set the personal default
+CINDERPLOT_EDITABLE_SVG=0 "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col()" -o "$tmpdir/pl.svg"
+if grep -q "<text" "$tmpdir/pl.svg"; then
+    echo "default svg unexpectedly has <text> elements" >&2
+    exit 1
+fi
+# the flag needs an .svg output
+if "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col()" \
+        --editable-svg -o "$tmpdir/ed.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "--editable-svg on a pdf unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'needs an .svg output' "$tmpdir/err" >/dev/null
+# CINDERPLOT_EDITABLE_SVG=1 is a personal default; --outline-svg overrides it
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col()" \
+    -o "$tmpdir/ev.svg"
+grep -q "<text" "$tmpdir/ev.svg" || {
+    echo "CINDERPLOT_EDITABLE_SVG=1 changed nothing" >&2; exit 1; }
+# the TRAILING-filename form must behave identically to -o (the editable
+# decision once ran before the positional output was resolved)
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col()" \
+    "$tmpdir/evp.svg"
+grep -q "<text" "$tmpdir/evp.svg" || {
+    echo "env var inert with a trailing output filename" >&2; exit 1; }
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col()" \
+    --outline-svg -o "$tmpdir/ev2.svg"
+if grep -q "<text" "$tmpdir/ev2.svg"; then
+    echo "--outline-svg did not override the env var" >&2
+    exit 1
+fi
+
 echo "all tests passed"
