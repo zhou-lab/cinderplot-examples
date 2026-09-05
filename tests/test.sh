@@ -1601,4 +1601,60 @@ printf '1,1,A,u\n' >>"$tmpdir/wide.csv"
 grep 'legend block is' "$tmpdir/err" >/dev/null || {
     echo "oversize legend block did not warn" >&2; exit 1; }
 
+# ---- coord_polar(): the radar subset ---------------------------------------
+printf 'class,frac,ct\n' >"$tmpdir/radar.csv"
+for c in A B C D E; do
+    printf '%s,0.4,u\n%s,0.7,v\n' "$c" "$c" >>"$tmpdir/radar.csv"
+done
+"$CINDERPLOT" "$tmpdir/radar.csv + aes(x=factor(class), y=frac, colour=ct) + geom_line() + geom_point() + coord_polar() + ylim(0,1)" \
+    -o "$tmpdir/radar.pdf"
+test -s "$tmpdir/radar.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    # spokes carry the category labels
+    pdftotext "$tmpdir/radar.pdf" - | grep 'A' >/dev/null || {
+        echo "radar spoke labels missing" >&2; exit 1; }
+fi
+# continuous x, unsupported geoms and facets refuse with a menu
+if "$CINDERPLOT" "$tmpdir/radar.csv + aes(x=frac, y=frac) + geom_point() + coord_polar()" \
+        -o "$tmpdir/radar2.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "polar on continuous x unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'discrete x' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/radar.csv + aes(x=factor(class), y=frac) + geom_col() + coord_polar()" \
+        -o "$tmpdir/radar3.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "polar bars unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'pie/rose' "$tmpdir/err" >/dev/null
+
+# ---- geom_tile(colour=): a border, not the fill ----------------------------
+# a layer colour= used to take over the fill, so colour="white" blanked
+# every cell; it must stroke the border over the MAPPED fill
+printf 'x,y,v\na,r,1\nb,r,50\nc,r,99\n' >"$tmpdir/tl.csv"
+"$CINDERPLOT" "$tmpdir/tl.csv + aes(x=x, y=y, fill=v) + geom_tile(colour=\"white\", linewidth=0.5)" \
+    --size 4x2 -o "$tmpdir/tl1.png"
+"$CINDERPLOT" "$tmpdir/tl.csv + aes(x=x, y=y, fill=v) + geom_tile()" \
+    --size 4x2 -o "$tmpdir/tl2.png"
+if cmp -s "$tmpdir/tl1.png" "$tmpdir/tl2.png"; then
+    echo "tile colour= border drew nothing" >&2
+    exit 1
+fi
+# the border must not erase the fill: bordered tiles still differ from a
+# blank panel (the old bug rendered them all white)
+"$CINDERPLOT" "$tmpdir/tl.csv + aes(x=x, y=y, fill=v) + geom_tile(colour=\"white\") + guides(colour=\"none\")" \
+    --size 4x2 -o "$tmpdir/tl3.png"
+"$CINDERPLOT" "$tmpdir/tl.csv + aes(x=x, y=y, fill=v) + geom_tile(colour=\"white\") + scale_fill_gradient(low=\"white\", high=\"white\") + guides(colour=\"none\")" \
+    --size 4x2 -o "$tmpdir/tl4.png"
+if cmp -s "$tmpdir/tl3.png" "$tmpdir/tl4.png"; then
+    echo "tile fill vanished under colour= (the old bug)" >&2
+    exit 1
+fi
+if "$CINDERPLOT" "$tmpdir/tl.csv + aes(x=x, y=y, fill=v) + geom_tile(linewidth=0)" \
+        -o "$tmpdir/tl5.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "linewidth=0 unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'number > 0' "$tmpdir/err" >/dev/null
+
 echo "all tests passed"
