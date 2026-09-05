@@ -1574,4 +1574,31 @@ CINDERPLOT_BASE_LINE_SIZE=abc "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site
     --size 4x3 -o "$tmpdir/bl6.png" 2>"$tmpdir/err"
 grep 'ignoring CINDERPLOT_BASE_LINE_SIZE' "$tmpdir/err" >/dev/null
 
+# ---- svg raster crispness, and free_colour legend-block width --------------
+# a rasterized heatmap body must carry image-rendering:pixelated in SVG
+# (cairo drops the NEAREST hint; viewers otherwise smear the cells), and a
+# smooth-scaled raster point layer must NOT
+"$CINDERPLOT" "$tmpdir/hmbig.tsv + heatmap(cluster=none)" --size 6x6 -o "$tmpdir/crisp.svg"
+grep -q 'image-rendering:pixelated' "$tmpdir/crisp.svg" || {
+    echo "rasterized heatmap svg missing the pixelated stamp" >&2; exit 1; }
+i=0; printf 'x,y\n' >"$tmpdir/manypts.csv"
+while [ "$i" -lt 3000 ]; do printf '%d,%d\n' "$((i%97))" "$((i%89))" >>"$tmpdir/manypts.csv"; i=$((i+1)); done
+"$CINDERPLOT" "$tmpdir/manypts.csv + aes(x,y) + geom_point(raster=TRUE)" -o "$tmpdir/smoothpts.svg"
+if grep -q 'pixelated' "$tmpdir/smoothpts.svg"; then
+    echo "raster point layer wrongly stamped pixelated" >&2
+    exit 1
+fi
+# a free_colour legend block wider than its panel column warns
+printf 'x,y,panel,v\n' >"$tmpdir/wide.csv"
+i=0
+while [ "$i" -lt 30 ]; do
+    printf '%d,%d,B,a-very-long-level-name-%02d\n' "$i" "$i" "$i" >>"$tmpdir/wide.csv"
+    i=$((i+1))
+done
+printf '1,1,A,u\n' >>"$tmpdir/wide.csv"
+"$CINDERPLOT" "$tmpdir/wide.csv + aes(x, y, colour=v) + geom_point() + facet_wrap(~panel, scales=\"free_colour\") + guides(colour=guide_legend(nrow=3))" \
+    --size 5x4 -o "$tmpdir/wide.pdf" 2>"$tmpdir/err"
+grep 'legend block is' "$tmpdir/err" >/dev/null || {
+    echo "oversize legend block did not warn" >&2; exit 1; }
+
 echo "all tests passed"
