@@ -1545,4 +1545,33 @@ if grep -q "<text" "$tmpdir/ev2.svg"; then
     exit 1
 fi
 
+# ---- theme_*(base_line_size=) and CINDERPLOT_BASE_LINE_SIZE ----------------
+CINDERPLOT_BASE_LINE_SIZE= "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col() + theme_bw()" \
+    --size 4x3 -o "$tmpdir/bl1.png"
+CINDERPLOT_BASE_LINE_SIZE= "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col() + theme_bw(base_line_size=0.25)" \
+    --size 4x3 -o "$tmpdir/bl2.png"
+if cmp -s "$tmpdir/bl1.png" "$tmpdir/bl2.png"; then
+    echo "base_line_size= changed nothing" >&2
+    exit 1
+fi
+# the env var is the same knob, and the spec argument beats it
+CINDERPLOT_BASE_LINE_SIZE=0.25 "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col() + theme_bw()" \
+    --size 4x3 -o "$tmpdir/bl3.png"
+cmp -s "$tmpdir/bl3.png" "$tmpdir/bl2.png" || {
+    echo "env var and spec argument disagree" >&2; exit 1; }
+CINDERPLOT_BASE_LINE_SIZE=0.25 "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col() + theme_bw(base_line_size=0.5)" \
+    --size 4x3 -o "$tmpdir/bl4.png"
+cmp -s "$tmpdir/bl4.png" "$tmpdir/bl1.png" || {
+    echo "spec base_line_size did not override the env var" >&2; exit 1; }
+# nonsense values refuse / warn
+if "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col() + theme_bw(base_line_size=0)" \
+        -o "$tmpdir/bl5.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "base_line_size=0 unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'number > 0' "$tmpdir/err" >/dev/null
+CINDERPLOT_BASE_LINE_SIZE=abc "$CINDERPLOT" "$tmpdir/rot.csv + aes(x=factor(site), y=pct) + geom_col()" \
+    --size 4x3 -o "$tmpdir/bl6.png" 2>"$tmpdir/err"
+grep 'ignoring CINDERPLOT_BASE_LINE_SIZE' "$tmpdir/err" >/dev/null
+
 echo "all tests passed"
