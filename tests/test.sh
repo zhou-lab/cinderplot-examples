@@ -1688,4 +1688,36 @@ grep 'must be >= 0' "$tmpdir/err" >/dev/null
     -o "$tmpdir/ex6.pdf"
 test -s "$tmpdir/ex6.pdf"
 
+# ---- theme(legend.position="inside"), blank titles, auto-fold ---------------
+"$CINDERPLOT" "$tmpdir/fcl.csv + aes(x, y, colour=v) + geom_point() + facet_wrap(~panel, scales=\"free_colour\") + theme(legend.position=\"inside\", legend.position.inside=c(0.8, 0.2))" \
+    --size 8x4 -o "$tmpdir/li1.pdf"
+test -s "$tmpdir/li1.pdf"
+# single-panel inside legend
+"$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct, fill=predicted) + geom_col() + theme(legend.position=\"inside\")" \
+    --size 4x4 -o "$tmpdir/li2.pdf"
+test -s "$tmpdir/li2.pdf"
+# labs(colour=\"\") drops the free_colour block titles: the render changes
+"$CINDERPLOT" "$tmpdir/fcl.csv + aes(x, y, colour=v) + geom_point() + facet_wrap(~panel, scales=\"free_colour\") + labs(colour=\"\")" \
+    --size 8x4 -o "$tmpdir/li3.png"
+"$CINDERPLOT" "$tmpdir/fcl.csv + aes(x, y, colour=v) + geom_point() + facet_wrap(~panel, scales=\"free_colour\")" \
+    --size 8x4 -o "$tmpdir/li4.png"
+if cmp -s "$tmpdir/li3.png" "$tmpdir/li4.png"; then
+    echo "labs(colour=\"\") changed nothing under free_colour" >&2
+    exit 1
+fi
+# facets + a single shared legend cannot go inside
+if "$CINDERPLOT" "$tmpdir/fcl.csv + aes(x, y, colour=v) + geom_point() + facet_wrap(~panel) + theme(legend.position=\"inside\")" \
+        -o "$tmpdir/li5.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "shared inside legend with facets unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'free_colour' "$tmpdir/err" >/dev/null
+# other theme() keys stay refused
+if "$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct) + geom_col() + theme(strip.text=element_blank())" \
+        -o "$tmpdir/li6.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "arbitrary theme() unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'not implemented' "$tmpdir/err" >/dev/null
+
 echo "all tests passed"
