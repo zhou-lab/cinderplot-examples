@@ -1,6 +1,14 @@
 #!/bin/sh
 set -eu
 
+# Personal defaults must not reach the suite. CINDERPLOT_EDITABLE_SVG=1 and
+# CINDERPLOT_BASE_LINE_SIZE=0.25 are documented per-user settings, so a
+# maintainer who has them exported would otherwise be testing a different
+# tool from CI: an SVG comes out as <text> elements rather than glyph
+# outlines, and every chrome line is half weight. The cases that exercise
+# those knobs set them per invocation, below.
+unset CINDERPLOT_EDITABLE_SVG CINDERPLOT_BASE_LINE_SIZE
+
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/cinderplot-test.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
 
@@ -2447,13 +2455,13 @@ grep 'rotated x tick labels take' "$tmpdir/long30.err" >/dev/null
 printf 'a,b,v\nx,p,1\nx,q,2\ny,p,3\n' >"$tmpdir/tiletext.csv"
 "$CINDERPLOT" \
     "$tmpdir/tiletext.csv + aes(a,b,fill=v,label=v) + geom_tile() + geom_text(colour=\"white\")" \
-    -o "$tmpdir/tiletext.svg" --size 4x3
+    -o "$tmpdir/tiletext.svg" --size 4x3 --editable-svg
 test -s "$tmpdir/tiletext.svg"
 test "$(grep -c '<text [^>]*fill="#ffffff"' "$tmpdir/tiletext.svg")" -eq 3
 printf 'a,b,v\nx,10,1\nx,20,2\ny,10,3\n' >"$tmpdir/tiletextf.csv"
 "$CINDERPLOT" \
     "$tmpdir/tiletextf.csv + aes(a,factor(b),fill=v,label=v) + geom_tile() + geom_text(colour=\"white\")" \
-    -o "$tmpdir/tiletextf.svg" --size 4x3
+    -o "$tmpdir/tiletextf.svg" --size 4x3 --editable-svg
 # every label lands inside the panel (at its factor slot), so all three survive the clip
 test "$(grep -c '<text [^>]*fill="#ffffff"' "$tmpdir/tiletextf.svg")" -eq 3
 
@@ -2508,9 +2516,9 @@ test "$(grep -c 'fill="rgb(100%, 100%, 100%)"' "$tmpdir/boxfree.svg")" -eq 4
 # the label vertically; it used to be emitted after the transpose and stayed put
 printf 'x,y\nA,1\nB,3\nC,-3\n' >"$tmpdir/annflip.csv"
 "$CINDERPLOT" "$tmpdir/annflip.csv + aes(x,y) + geom_col() + coord_flip() + annotate(\"text\", x=1, y=1, label=\"hi\")" \
-    -o "$tmpdir/annflip1.svg" --size 4x3
+    -o "$tmpdir/annflip1.svg" --size 4x3 --editable-svg
 "$CINDERPLOT" "$tmpdir/annflip.csv + aes(x,y) + geom_col() + coord_flip() + annotate(\"text\", x=3, y=1, label=\"hi\")" \
-    -o "$tmpdir/annflip3.svg" --size 4x3
+    -o "$tmpdir/annflip3.svg" --size 4x3 --editable-svg
 pos1=$(grep -o '<text[^>]*>hi</text>' "$tmpdir/annflip1.svg" | sed 's/.*x="\([0-9.]*\)" y="\([0-9.]*\)".*/\1 \2/')
 pos3=$(grep -o '<text[^>]*>hi</text>' "$tmpdir/annflip3.svg" | sed 's/.*x="\([0-9.]*\)" y="\([0-9.]*\)".*/\1 \2/')
 test "${pos1% *}" = "${pos3% *}"          # same horizontal position
