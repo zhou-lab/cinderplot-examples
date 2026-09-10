@@ -9,6 +9,13 @@ set -eu
 # those knobs set them per invocation, below.
 unset CINDERPLOT_EDITABLE_SVG CINDERPLOT_BASE_LINE_SIZE
 
+# Cairo spells SVG paint two ways depending on its version -- 1.18 as
+# attributes, 1.17 inside a style="" property without spaces -- so a case that
+# greps for one form passes against a conda-linked build and fails against the
+# lab binary, which links the system cairo. svgnorm rewrites the older form
+# into the newer one, in place, right after the render; see tests/svgnorm.py.
+svgnorm() { python3 "$here/tests/svgnorm.py" "$@"; }
+
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/cinderplot-test.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
 
@@ -2077,6 +2084,7 @@ printf 'grp\nlow\nhigh\nlow\nhigh\nlow\nhigh\n' >"$tmpdir/chaingrp.csv"
      + annotation(\"$tmpdir/chaingrp.csv\", right_of(\"m\"), name=\"A\")
      + annotation(\"$tmpdir/chaingrp.csv\", right_of(\"A\"), name=\"B\")" \
     --size 4x4 -o "$tmpdir/chain.svg"
+svgnorm "$tmpdir/chain.svg"
 # the two strips are 6 rects each, drawn A then B, right after the 12 cells
 fills=$(grep -o 'fill="rgb([^"]*"' "$tmpdir/chain.svg" | sed -n '13,24p')
 a=$(echo "$fills" | head -6 | tr '\n' ' '); b=$(echo "$fills" | tail -6 | tr '\n' ' ')
@@ -2092,6 +2100,7 @@ printf 'rn,a,b\nr1,0,0.01\nr2,5,10\n' >"$tmpdir/nonneg.csv"
 "$CINDERPLOT" "$tmpdir/nonneg.csv + heatmap(cluster=none)
      + scale_fill_gradient2(low=\"#0000FF\", mid=\"#FFFFFF\", high=\"#FF0000\")" \
     --size 3x3 -o "$tmpdir/nonneg.svg"
+svgnorm "$tmpdir/nonneg.svg"
 if grep -q 'fill="rgb(0%, 0%, 100%)"' "$tmpdir/nonneg.svg"; then
     echo "gradient2 painted the midpoint value with the low colour" >&2
     exit 1
@@ -2105,6 +2114,7 @@ printf 'rn,a,b\nr1,-1,3\nr2,0,1\n' >"$tmpdir/asym.csv"
 "$CINDERPLOT" "$tmpdir/asym.csv + heatmap(name=\"m\", cluster=none) + legend(right_of(\"m\"))
      + scale_fill_gradient2(low=\"#0000FF\", mid=\"#FFFFFF\", high=\"#FF0000\")" \
     --size 3x3 -o "$tmpdir/asym.svg"
+svgnorm "$tmpdir/asym.svg"
 python3 - "$tmpdir/asym.svg" <<'PY'
 import re, sys
 svg = open(sys.argv[1]).read()
@@ -2470,6 +2480,7 @@ test "$(grep -c '<text [^>]*fill="#ffffff"' "$tmpdir/tiletextf.svg")" -eq 3
 # Negatives stack downward from 0. The bar tops are read back from the SVG.
 printf 'x,y\nA,1\nA,2\nB,3\nC,-1\nC,-2\n' >"$tmpdir/coldup.csv"
 "$CINDERPLOT" "$tmpdir/coldup.csv + aes(x,y) + geom_col()" -o "$tmpdir/coldup.svg" --size 4x3
+svgnorm "$tmpdir/coldup.svg"
 grep 'fill="rgb(34.9%, 34.9%, 34.9%)"' "$tmpdir/coldup.svg" \
     | sed 's/.*d="M [0-9.]* \([0-9.]*\) .*/\1/' >"$tmpdir/coldup.tops"
 test "$(wc -l <"$tmpdir/coldup.tops")" -eq 5
@@ -2486,6 +2497,7 @@ test "$(sed -n 5p "$tmpdir/coldup.tops")" = "$c1bot"
 # bar starts inside the panel instead of being cut by its left edge.
 printf 'x\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n' >"$tmpdir/hist6.csv"
 "$CINDERPLOT" "$tmpdir/hist6.csv + aes(x) + geom_histogram(bins=6)" -o "$tmpdir/hist6.svg" --size 4x3
+svgnorm "$tmpdir/hist6.svg"
 grep 'fill="rgb(34.9%, 34.9%, 34.9%)"' "$tmpdir/hist6.svg" \
     | sed 's/.*d="M \([0-9.-]*\) \([0-9.-]*\) .*/\1 \2/' >"$tmpdir/hist6.bars"
 test "$(wc -l <"$tmpdir/hist6.bars")" -eq 6
@@ -2501,6 +2513,7 @@ awk -v p="$panelx" -v b="$barx" 'BEGIN { exit !(b > p + 5) }'
 printf 'x,f\n1,a\n2,a\n3,a\n4,a\n10,b\n' >"$tmpdir/histfree.csv"
 "$CINDERPLOT" "$tmpdir/histfree.csv + aes(x) + geom_histogram(bins=3) + facet_wrap(~f, scales=\"free_x\")" \
     -o "$tmpdir/histfree.svg" --size 6x3
+svgnorm "$tmpdir/histfree.svg"
 test "$(grep -c 'fill="rgb(34.9%, 34.9%, 34.9%)"' "$tmpdir/histfree.svg")" -eq 4
 
 # ---- C8: geom_boxplot() under facet_wrap(scales="free_x") uses the panel's x slots ----
@@ -2509,6 +2522,7 @@ test "$(grep -c 'fill="rgb(34.9%, 34.9%, 34.9%)"' "$tmpdir/histfree.svg")" -eq 4
 printf 'x,y,f\na,1,P1\na,2,P1\na,3,P1\nb,2,P1\nb,3,P1\nb,4,P1\nc,5,P2\nc,6,P2\nc,7,P2\nd,1,P2\nd,2,P2\nd,9,P2\n' >"$tmpdir/boxfree.csv"
 "$CINDERPLOT" "$tmpdir/boxfree.csv + aes(x,y) + geom_boxplot() + facet_wrap(~f, scales=\"free_x\")" \
     -o "$tmpdir/boxfree.svg" --size 6x3
+svgnorm "$tmpdir/boxfree.svg"
 test "$(grep -c 'fill="rgb(100%, 100%, 100%)"' "$tmpdir/boxfree.svg")" -eq 4
 
 # ---- C10: annotate() is transposed by coord_flip() ----
@@ -2531,6 +2545,7 @@ printf 'x,y,xend\n10,1,10\n100,2,100\n' >"$tmpdir/seglog.csv"
 printf 'x,xend,y\n10,100,1.5\n' >"$tmpdir/seglogd.csv"
 "$CINDERPLOT" "$tmpdir/seglog.csv + aes(x,y,xend=xend) + geom_point() + geom_segment(data=\"$tmpdir/seglogd.csv\", colour=\"red\") + scale_x_log10()" \
     -o "$tmpdir/seglog.svg" --size 4x3
+svgnorm "$tmpdir/seglog.svg"
 test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/seglog.svg")" -eq 1
 
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
@@ -2538,6 +2553,7 @@ test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/seglog.svg")" -eq 1
 # and through the neighbouring bars; a cap is now narrower than the x spacing
 printf 'x,y,lo,hi\n0.1,1,0.5,1.5\n0.2,2,1.5,2.5\n0.3,3,2.5,3.5\n' >"$tmpdir/ebres.csv"
 "$CINDERPLOT" "$tmpdir/ebres.csv + aes(x,y,ymin=lo,ymax=hi) + geom_errorbar()" -o "$tmpdir/ebres.svg" --size 4x3
+svgnorm "$tmpdir/ebres.svg"
 grep 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/ebres.svg" | sed 's/.*d="M \([0-9.-]*\) \([0-9.-]*\) L \([0-9.-]*\) \([0-9.-]*\).*/\1 \2 \3 \4/' >"$tmpdir/ebres.lines"
 # stems (x0 == x1) of the first two rows give the spacing; caps (y0 == y1) the width
 awk '$1 == $3 { s[n++] = $1 } $2 == $4 { w = $3 - $1 }
@@ -2564,16 +2580,20 @@ test -s "$tmpdir/contcol-ok.pdf"
 printf 'x,y,xend,yend,g\n1,1,2,2,a\n2,2,3,1,b\n' >"$tmpdir/constcol.csv"
 "$CINDERPLOT" "$tmpdir/constcol.csv + aes(x,y,xend=xend,yend=yend) + geom_segment(colour=\"red\")" \
     -o "$tmpdir/constseg.svg" --size 4x3
+svgnorm "$tmpdir/constseg.svg"
 test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/constseg.svg")" -eq 2
 "$CINDERPLOT" "$tmpdir/constcol.csv + aes(x,y,xend=xend,yend=yend,fill=g) + geom_rect(fill=\"red\")" \
     -o "$tmpdir/constrect.svg" --size 4x3
+svgnorm "$tmpdir/constrect.svg"
 test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/constrect.svg")" -eq 2
 printf 'g,v\na,1\na,2\na,3\na,4\nb,2\nb,3\nb,4\nb,5\n' >"$tmpdir/constbox.csv"
 # fill= paints the two bodies, colour= the chrome (whiskers, outline, median)
 "$CINDERPLOT" "$tmpdir/constbox.csv + aes(g,v) + geom_boxplot(fill=\"red\")" -o "$tmpdir/constboxf.svg" --size 4x3
+svgnorm "$tmpdir/constboxf.svg"
 test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/constboxf.svg")" -eq 2
 test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/constboxf.svg")" -eq 0
 "$CINDERPLOT" "$tmpdir/constbox.csv + aes(g,v) + geom_boxplot(colour=\"red\")" -o "$tmpdir/constboxc.svg" --size 4x3
+svgnorm "$tmpdir/constboxc.svg"
 test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/constboxc.svg")" -eq 0
 test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/constboxc.svg")" -eq 8
 
@@ -2582,12 +2602,14 @@ test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/constboxc.svg")" -eq 8
 printf 'g,y,lo,hi\nA,3,2,4\nB,5,4,6\nC,4,3,5\n' >"$tmpdir/ebfill.csv"
 "$CINDERPLOT" "$tmpdir/ebfill.csv + aes(g,y,fill=g,ymin=lo,ymax=hi) + geom_col() + geom_errorbar(width=0.3)" \
     -o "$tmpdir/ebfill.svg" --size 4x3
+svgnorm "$tmpdir/ebfill.svg"
 test "$(grep -c 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/ebfill.svg")" -eq 9
 
 # ---- C25: dodged boxplots centre a category with fewer groups (dodge2 preserve="total") ----
 # b holds only g1: its box takes the category's full width, twice a's half-boxes
 printf 'x,g,y\na,g1,1\na,g1,2\na,g1,3\na,g2,2\na,g2,3\na,g2,4\nb,g1,3\nb,g1,4\nb,g1,5\n' >"$tmpdir/dodge.csv"
 "$CINDERPLOT" "$tmpdir/dodge.csv + aes(x,y,fill=g) + geom_boxplot()" -o "$tmpdir/dodge.svg" --size 4x3
+svgnorm "$tmpdir/dodge.svg"
 grep '<path fill-rule="nonzero" fill="rgb(97.254902%, 46.27451%, 42.745098%)"' "$tmpdir/dodge.svg" \
     | sed 's/.*d="M \([0-9.]*\) [0-9.]* L \([0-9.]*\) .*/\1 \2/' >"$tmpdir/dodge.w"
 test "$(wc -l <"$tmpdir/dodge.w")" -eq 3           # legend key, a/g1, b/g1
@@ -3009,6 +3031,7 @@ while [ "$i" -lt 10 ]; do
 done
 "$CINDERPLOT" "region(\"chr1:1000-2000\") + matrix(\"$tmpdir/hlm.tsv\", name=\"m\", cluster=none, colnames=off) + highlight(name=\"m\", row=\"S2\", region=\"chr1:1200-1500\", colour=\"#d73027\")" \
     -o "$tmpdir/hlt.svg"
+svgnorm "$tmpdir/hlt.svg"
 test -s "$tmpdir/hlt.svg"
 grep -q 'stroke="rgb(84.313725%, 18.823529%, 15.294118%)"' "$tmpdir/hlt.svg"
 
@@ -3018,6 +3041,7 @@ printf 'S1\tchr1\t1000\t1300\t#4575b4\tF\tsolid\n' >>"$tmpdir/hlbox.tsv"
 printf 'S2\tchr1\t1600\t1900\t#e08214\tE\tdashed\n' >>"$tmpdir/hlbox.tsv"
 "$CINDERPLOT" "region(\"chr1:1000-2000\") + matrix(\"$tmpdir/hlm.tsv\", name=\"m\", cluster=none, colnames=off) + highlight(\"$tmpdir/hlbox.tsv\", name=\"m\")" \
     -o "$tmpdir/hlf.svg"
+svgnorm "$tmpdir/hlf.svg"
 grep -q 'stroke="rgb(27.058824%, 45.882353%, 70.588235%)"' "$tmpdir/hlf.svg"
 grep -q 'stroke="rgb(87.843137%, 50.980392%, 7.843137%)"' "$tmpdir/hlf.svg"
 
