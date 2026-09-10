@@ -1192,7 +1192,7 @@ if "$CINDERPLOT" "$tmpdir/hm.tsv + heatmap(cluster=none) + scale_fill_viridis(li
     echo "limits=c(100,0) unexpectedly succeeded" >&2
     exit 1
 fi
-grep 'limits= expects lo < hi' "$tmpdir/err" >/dev/null
+grep 'limits=: lo must be < hi' "$tmpdir/err" >/dev/null
 
 # ---- highlight() -----------------------------------------------------------
 # a bounding box on one cell, addressed by row/column name
@@ -1719,5 +1719,1332 @@ if "$CINDERPLOT" "$tmpdir/st.csv + aes(x=donor, y=pct) + geom_col() + theme(stri
     exit 1
 fi
 grep 'not implemented' "$tmpdir/err" >/dev/null
+
+# ---- chord(): circlize-style chord diagram ---------------------------------
+printf 'from,to,value\nA,X,4\nA,Y,2\nB,X,3\nB,B,1\n' >"$tmpdir/ch.csv"
+"$CINDERPLOT" "$tmpdir/ch.csv + chord()" -o "$tmpdir/ch.pdf"
+test -s "$tmpdir/ch.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    for nm in A B X Y; do
+        pdftotext "$tmpdir/ch.pdf" - | grep "$nm" >/dev/null || {
+            echo "chord sector label $nm missing" >&2; exit 1; }
+    done
+fi
+# named colours change the ink
+"$CINDERPLOT" "$tmpdir/ch.csv + chord() + scale_fill_manual(values=c(\"A\"=\"#000000\"))" \
+    --size 5x5 -o "$tmpdir/ch1.png"
+"$CINDERPLOT" "$tmpdir/ch.csv + chord()" --size 5x5 -o "$tmpdir/ch2.png"
+if cmp -s "$tmpdir/ch1.png" "$tmpdir/ch2.png"; then
+    echo "chord manual colours changed nothing" >&2
+    exit 1
+fi
+# refusals: bad column, non-positive value, mode mixing
+if "$CINDERPLOT" "$tmpdir/ch.csv + chord(from=\"nope\")" -o "$tmpdir/ch3.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "chord bad column unexpectedly succeeded" >&2; exit 1
+fi
+grep 'not found' "$tmpdir/err" >/dev/null
+printf 'from,to,value\nA,B,0\n' >"$tmpdir/chz.csv"
+if "$CINDERPLOT" "$tmpdir/chz.csv + chord()" -o "$tmpdir/ch4.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "chord zero value unexpectedly succeeded" >&2; exit 1
+fi
+grep 'must be positive' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/ch.csv + chord() + geom_point()" -o "$tmpdir/ch5.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "chord mixed with a geom unexpectedly succeeded" >&2; exit 1
+fi
+grep 'its own mode' "$tmpdir/err" >/dev/null
+
+# ---- errorbars, segment fixes, legend reverse, chord ordering --------------
+printf 'x,y,s,lo,hi\n1,5,a,4,6\n2,7,a,6,8\n1,4,b,3,5\n2,6,b,5,7\n' >"$tmpdir/eb.csv"
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x, y, colour=s, ymin=lo, ymax=hi) + geom_errorbar(width=0.2) + geom_line() + geom_point()" \
+    --size 4x3 -o "$tmpdir/eb1.png"
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x, y, colour=s, ymin=lo, ymax=hi) + geom_linerange() + geom_line()" \
+    --size 4x3 -o "$tmpdir/eb2.png"
+test -s "$tmpdir/eb1.png" && test -s "$tmpdir/eb2.png"
+if "$CINDERPLOT" "$tmpdir/eb.csv + aes(x, y) + geom_errorbar()" -o "$tmpdir/eb3.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "errorbar without ymin/ymax unexpectedly succeeded" >&2; exit 1
+fi
+grep 'aes(ymin=, ymax=)' "$tmpdir/err" >/dev/null
+# the old rect ymin-as-y spelling still parses
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x=x, xend=x, ymin=lo, ymax=hi) + geom_rect()" \
+    -o "$tmpdir/eb4.pdf"
+test -s "$tmpdir/eb4.pdf"
+# geom_segment(y=col) names the start column (it used to parse and do nothing)
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x, y, xend=x, yend=hi) + geom_segment(y=lo)" \
+    --size 4x3 -o "$tmpdir/sg1.png"
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x, y, xend=x, yend=hi) + geom_segment()" \
+    --size 4x3 -o "$tmpdir/sg2.png"
+if cmp -s "$tmpdir/sg1.png" "$tmpdir/sg2.png"; then
+    echo "geom_segment(y=) changed nothing" >&2; exit 1
+fi
+# guide_legend(reverse=TRUE) flips the key order
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x, y, colour=s) + geom_point() + guides(colour=guide_legend(reverse=TRUE))" \
+    --size 4x3 -o "$tmpdir/rv1.png"
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x, y, colour=s) + geom_point()" \
+    --size 4x3 -o "$tmpdir/rv2.png"
+if cmp -s "$tmpdir/rv1.png" "$tmpdir/rv2.png"; then
+    echo "guide_legend(reverse=) changed nothing" >&2; exit 1
+fi
+# chord order= and bipartite=
+"$CINDERPLOT" "$tmpdir/ch.csv + chord(order=c(\"B\",\"A\",\"Y\",\"X\"))" -o "$tmpdir/cho.pdf"
+test -s "$tmpdir/cho.pdf"
+if "$CINDERPLOT" "$tmpdir/ch.csv + chord(bipartite=TRUE)" -o "$tmpdir/chb.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "bipartite with a self-link unexpectedly succeeded" >&2; exit 1
+fi
+grep 'both sides' "$tmpdir/err" >/dev/null
+printf 'from,to,value\nA,X,4\nB,Y,2\n' >"$tmpdir/chd.csv"
+"$CINDERPLOT" "$tmpdir/chd.csv + chord(bipartite=TRUE)" -o "$tmpdir/chb2.pdf"
+test -s "$tmpdir/chb2.pdf"
+if "$CINDERPLOT" "$tmpdir/chd.csv + chord(order=c(\"A\"))" -o "$tmpdir/chb3.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "short chord order unexpectedly succeeded" >&2; exit 1
+fi
+grep 'complete list' "$tmpdir/err" >/dev/null
+
+# ==== 2026-09-10 review fixes: track/tree/csv readers ================================================
+
+# ---- B1: cytoband() with a numeric chrom column, or text start/end ----------
+# Ensembl-style `1` types the chrom column numeric; it is formatted for the
+# match rather than dereferenced as a string (which segfaulted).
+printf 'chrom\tstart\tend\tname\tstain\n1\t0\t1000000\tp1\tgneg\n1\t1000000\t2000000\tp2\tacen\n' \
+    >"$tmpdir/cb-num.tsv"
+"$CINDERPLOT" "region(\"1:100-2000\") + cytoband(\"$tmpdir/cb-num.tsv\")" \
+    -o "$tmpdir/cb-num.pdf"
+test -s "$tmpdir/cb-num.pdf"
+# a text cell in start/end is a typed error naming the file and column
+printf 'chrom\tstart\tend\tname\tstain\nchr1\t0\t1000000\tp1\tgneg\nchr1\tx\t2000000\tp2\tacen\n' \
+    >"$tmpdir/cb-str.tsv"
+if "$CINDERPLOT" "region(\"chr1:100-2000\") + cytoband(\"$tmpdir/cb-str.tsv\")" \
+    -o "$tmpdir/cb-str.pdf" 2>"$tmpdir/cb-str.err"; then
+    echo "cytoband with a text start cell unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'cb-str.tsv.*column `start` must be numeric' "$tmpdir/cb-str.err" >/dev/null
+
+# ---- B2: matrix() with integer Probe_IDs (long and wide) --------------------
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample\n' >"$tmpdir/mat-numpid.tsv"
+printf 'chr1\t100\t101\t1001\t0.2\tS1\nchr1\t200\t201\t1002\t0.8\tS1\n' >>"$tmpdir/mat-numpid.tsv"
+printf 'chr1\t100\t101\t1001\t0.4\tS2\nchr1\t200\t201\t1002\t0.6\tS2\n' >>"$tmpdir/mat-numpid.tsv"
+"$CINDERPLOT" "region(\"chr1:50-250\") + matrix(\"$tmpdir/mat-numpid.tsv\")" \
+    -o "$tmpdir/mat-numpid.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/mat-numpid.pdf" - | grep -q 1001    # the id is the column label
+fi
+printf 'chrom\tbeg\tend\tProbe_ID\tS1\tS2\nchr1\t100\t101\t1001\t0.2\t0.4\nchr1\t200\t201\t1002\t0.8\t0.6\n' \
+    >"$tmpdir/mat-wide-numpid.tsv"
+"$CINDERPLOT" "region(\"chr1:50-250\") + matrix(\"$tmpdir/mat-wide-numpid.tsv\")" \
+    -o "$tmpdir/mat-wide-numpid.pdf"
+test -s "$tmpdir/mat-wide-numpid.pdf"
+
+# ---- B7: a Newick tree nested past the recursion guard is refused -----------
+python3 -c "print('(' * 12000 + 'a' + ')' * 12000 + ';')" >"$tmpdir/deep.tre"
+if "$CINDERPLOT" "$tmpdir/deep.tre + geom_tree()" -o "$tmpdir/deep.pdf" \
+    2>"$tmpdir/deep.err"; then
+    echo "12000-deep Newick unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'nests deeper than 10000 levels' "$tmpdir/deep.err" >/dev/null
+
+# ---- C40 / B8: a plain gzip (or a crafted header) beside a .tbi is an error -
+# A minimal tabix index whose only chunk points at offset 0 of the data file.
+python3 - "$tmpdir/plain.bed.gz.tbi" <<'PY'
+import gzip, struct, sys
+names = b'chr1\0'
+hdr = b'TBI\1' + struct.pack('<8i', 1, 0, 1, 2, 3, 0, 0, len(names)) + names
+body = (struct.pack('<i', 1) + struct.pack('<Ii', 4681, 1) + struct.pack('<QQ', 0, 1 << 16)
+        + struct.pack('<i', 1) + struct.pack('<Q', 0))
+open(sys.argv[1], 'wb').write(gzip.compress(hdr + body))
+PY
+printf 'chr1\t100\t200\tG\t0\t+\t100\t200\t0\t1\t100,\t0,\n' | gzip -c >"$tmpdir/plain.bed.gz"
+if "$CINDERPLOT" "region(\"chr1:50-250\") + genes(\"$tmpdir/plain.bed.gz\")" \
+    -o "$tmpdir/plain.pdf" 2>"$tmpdir/plain.err"; then
+    echo "plain gzip beside a .tbi unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'plain.bed.gz: not a BGZF file (needed for tabix); recompress with bgzip' \
+    "$tmpdir/plain.err" >/dev/null
+# FEXTRA header whose BC subfield's 2 data bytes fall outside xlen=4: not a
+# block, and never read past the extra field
+cp "$tmpdir/plain.bed.gz.tbi" "$tmpdir/bc.bed.gz.tbi"
+printf '\037\213\010\004\000\000\000\000\000\003\004\000BC\002\000\377\377\000\000\000\000\000\000\000\000' \
+    >"$tmpdir/bc.bed.gz"
+if "$CINDERPLOT" "region(\"chr1:50-250\") + genes(\"$tmpdir/bc.bed.gz\")" \
+    -o "$tmpdir/bc.pdf" 2>"$tmpdir/bc.err"; then
+    echo "short BC subfield unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'not a BGZF file' "$tmpdir/bc.err" >/dev/null
+
+# ---- C41: a truncated .gz is an error, not a shorter file -------------------
+printf 'chr1\t100\t200\tA\nchr1\t300\t400\tB\nchr1\t500\t600\tC\n' | gzip -c >"$tmpdir/whole.bed.gz"
+head -c 30 "$tmpdir/whole.bed.gz" >"$tmpdir/trunc.bed.gz"
+if "$CINDERPLOT" "region(\"chr1:50-650\") + interval(\"$tmpdir/trunc.bed.gz\")" \
+    -o "$tmpdir/trunc.pdf" 2>"$tmpdir/trunc.err"; then
+    echo "truncated gzip unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'trunc.bed.gz: unexpected end of file (truncated gzip)' "$tmpdir/trunc.err" >/dev/null
+"$CINDERPLOT" "region(\"chr1:50-650\") + interval(\"$tmpdir/whole.bed.gz\")" \
+    -o "$tmpdir/whole.pdf"
+test -s "$tmpdir/whole.pdf"
+
+# ---- C39: an inter-chromosomal BEDPE row is skipped, with a warning ---------
+printf 'chr1\t100\t200\tchr2\t500\t600\tL1\t5\nchr1\t100\t200\tchr1\t250\t300\tL2\t5\n' \
+    >"$tmpdir/trans.bedpe"
+"$CINDERPLOT" "region(\"chr1:50-350\") + arcs(\"$tmpdir/trans.bedpe\")" \
+    --editable-svg -o "$tmpdir/trans.svg" 2>"$tmpdir/trans.err"
+grep 'trans.bedpe: skipped 1 inter-chromosomal link' "$tmpdir/trans.err" >/dev/null
+# only the cis arc is drawn: an arc is the one long (40-point) path
+test "$(grep -o '<path[^>]*' "$tmpdir/trans.svg" | awk 'length($0) > 500' | wc -l)" -eq 1
+
+# ---- C42: a negative bedGraph draws below a zero line ------------------------
+printf 'chr1\t100\t200\t-3\nchr1\t200\t300\t-1\n' >"$tmpdir/neg.bedgraph"
+"$CINDERPLOT" "region(\"chr1:50-350\") + coverage(\"$tmpdir/neg.bedgraph\")" \
+    -o "$tmpdir/neg.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/neg.pdf" - | grep -F '[-3 - 0]' >/dev/null    # readout, not [0 - 1]
+fi
+
+# ---- C43: BED coordinates and region() are validated -------------------------
+printf 'chr1\tabc\t200\tX\n' >"$tmpdir/bad-coord.bed"
+if "$CINDERPLOT" "region(\"chr1:50-350\") + interval(\"$tmpdir/bad-coord.bed\")" \
+    -o "$tmpdir/bad-coord.pdf" 2>"$tmpdir/bad-coord.err"; then
+    echo "non-numeric BED start unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'bad-coord.bed line 1: column 2 `abc` is not a coordinate' "$tmpdir/bad-coord.err" >/dev/null
+printf 'chr1\t100\t200\tX\nchr1\t400\t300\tY\n' >"$tmpdir/inv.bed"
+if "$CINDERPLOT" "region(\"chr1:50-350\") + interval(\"$tmpdir/inv.bed\")" \
+    -o "$tmpdir/inv.pdf" 2>"$tmpdir/inv.err"; then
+    echo "BED start > end unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'inv.bed line 2: start 400 exceeds end 300' "$tmpdir/inv.err" >/dev/null
+printf 'chr1\t-50\t50\tZ\n' >"$tmpdir/negc.bed"
+if "$CINDERPLOT" "region(\"chr1:0-350\") + interval(\"$tmpdir/negc.bed\")" \
+    -o "$tmpdir/negc.pdf" 2>"$tmpdir/negc.err"; then
+    echo "negative BED start unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'negc.bed line 1: column 2 `-50` is not a coordinate' "$tmpdir/negc.err" >/dev/null
+for rg in 'chr1:-50-100' 'chr1:500-100' 'chr1:1x0-200'; do
+    if "$CINDERPLOT" "region(\"$rg\") + interval(\"$tmpdir/inv.bed\")" \
+        -o "$tmpdir/rg.pdf" 2>"$tmpdir/rg.err"; then
+        echo "region($rg) unexpectedly succeeded" >&2
+        exit 1
+    fi
+    grep "bad region \`$rg\`" "$tmpdir/rg.err" >/dev/null
+done
+# a BED12 block running past chromEnd names its line
+printf 'chr1\t100\t200\tG\t0\t+\t100\t200\t0\t2\t50,50\t0,500\n' >"$tmpdir/block.bed"
+if "$CINDERPLOT" "region(\"chr1:50-350\") + genes(\"$tmpdir/block.bed\")" \
+    -o "$tmpdir/block.pdf" 2>"$tmpdir/block.err"; then
+    echo "BED12 block beyond chromEnd unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'block.bed line 1: block 2 ends at 650, beyond chromEnd 200' "$tmpdir/block.err" >/dev/null
+
+# ---- C44: one stray cell in a wide matrix names the cell, not a new layout --
+printf 'chrom\tbeg\tend\tProbe_ID\tS1\tS2\nchr1\t100\t101\tcg1\t0.2\t0.4\nchr1\t200\t201\tcg2\tn/a\t0.6\n' \
+    >"$tmpdir/stray.tsv"
+if "$CINDERPLOT" "region(\"chr1:50-250\") + matrix(\"$tmpdir/stray.tsv\")" \
+    -o "$tmpdir/stray.pdf" 2>"$tmpdir/stray.err"; then
+    echo "wide matrix with a stray n/a unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'stray.tsv`: column `S1` row 3 is "n/a", not a number' "$tmpdir/stray.err" >/dev/null
+
+# ---- C45: numeric tree labels plus a numeric join key is ambiguous ----------
+printf '((3,1),2);' >"$tmpdir/num.tre"
+printf 'id\tgrp\n1\tred\n2\tred\n3\tblue\n' >"$tmpdir/num.tsv"
+if "$CINDERPLOT" "$tmpdir/num.tre + geom_tree() + geom_tippoint(data=\"$tmpdir/num.tsv\", colour=grp)" \
+    -o "$tmpdir/num.pdf" 2>"$tmpdir/num.err"; then
+    echo "numeric tip labels with a numeric key unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'ambiguous: tree labels are numeric and the join key is numeric' "$tmpdir/num.err" >/dev/null
+
+# ---- C46: empty tracks warn; the wrong file type for a track errors ---------
+printf 'chr1\t100\t200\tA\n' >"$tmpdir/one.bed"
+"$CINDERPLOT" "region(\"chr1:5000-6000\") + interval(\"$tmpdir/one.bed\")" \
+    -o "$tmpdir/empty-iv.pdf" 2>"$tmpdir/empty-iv.err"
+grep 'one.bed: 0 records overlap chr1:5000-6000' "$tmpdir/empty-iv.err" >/dev/null
+printf 'chr1\t100\t200\tG\t0\t+\t100\t200\t0\t1\t100,\t0,\n' >"$tmpdir/g12.bed"
+if "$CINDERPLOT" "region(\"chr1:50-350\") + coverage(\"$tmpdir/g12.bed\")" \
+    -o "$tmpdir/cov12.pdf" 2>"$tmpdir/cov12.err"; then
+    echo "coverage() fed a BED12 unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'g12.bed line 1: column 4 `G` is not a number; coverage() needs a bedGraph' \
+    "$tmpdir/cov12.err" >/dev/null
+printf 'chr1\t100\t200\t5\n' >"$tmpdir/sig.bedgraph"
+if "$CINDERPLOT" "region(\"chr1:50-350\") + genes(\"$tmpdir/sig.bedgraph\")" \
+    -o "$tmpdir/genes-bg.pdf" 2>"$tmpdir/genes-bg.err"; then
+    echo "genes() fed a bedGraph unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'sig.bedgraph line 1 has 4 columns; genes() needs a BED12' "$tmpdir/genes-bg.err" >/dev/null
+# under regions(), a window with no probes is named, and so is the file
+printf 'chr1\t100\t200\tleft\nchr1\t300\t400\tright\n' >"$tmpdir/win2.bed"
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample_name\nchr1\t120\t121\tp1\t0.1\ts1\n' \
+    >"$tmpdir/oneprobe.tsv"
+if "$CINDERPLOT" "regions(\"$tmpdir/win2.bed\") + matrix(\"$tmpdir/oneprobe.tsv\")" \
+    -o "$tmpdir/nowin.pdf" 2>"$tmpdir/nowin.err"; then
+    echo "regions() window without probes unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'matrix is empty in the requested window chr1:300-400 (.*oneprobe.tsv)' \
+    "$tmpdir/nowin.err" >/dev/null
+
+# ---- C47: a tick label at the panel edge slides inward in region() mode too -
+printf 'chr1\t120\t150\ta\n' >"$tmpdir/edge.bed"
+"$CINDERPLOT" "region(\"chr1:100-200\") + interval(\"$tmpdir/edge.bed\")" \
+    --editable-svg -o "$tmpdir/edge.svg"
+# the "100" label used to be centred on x=0 and start off the page
+x=$(grep '>100<' "$tmpdir/edge.svg" | sed 's/.* x="\([^"]*\)".*/\1/')
+test "$(awk -v x="$x" 'BEGIN{print (x >= 5) ? 1 : 0}')" -eq 1
+
+# ---- D2: a UTF-8 BOM on the header, and CRLF line ends in a BED -------------
+printf '\357\273\277x,y\n1,2\n2,3\n' >"$tmpdir/bom.csv"
+"$CINDERPLOT" "$tmpdir/bom.csv + aes(x,y) + geom_point()" -o "$tmpdir/bom.pdf"
+test -s "$tmpdir/bom.pdf"
+printf 'chr1\t100\t200\tpeakA\r\nchr1\t300\t400\tpeakB\r\n' >"$tmpdir/crlf.bed"
+"$CINDERPLOT" "region(\"chr1:50-450\") + interval(\"$tmpdir/crlf.bed\")" \
+    --editable-svg -o "$tmpdir/crlf.svg"
+if grep -q "peakA$(printf '\r')" "$tmpdir/crlf.svg"; then
+    echo "CRLF BED name kept its carriage return" >&2
+    exit 1
+fi
+grep -q '>peakA<' "$tmpdir/crlf.svg"
+
+# ---- D3: a nearly numeric column says which cell made it text ---------------
+printf 'x,y\n1,1\n2,2\n3,N/A\n4,4\n5,5\n6,6\n7,7\n8,8\n9,9\n10,10\n' >"$tmpdir/na.csv"
+"$CINDERPLOT" "$tmpdir/na.csv + aes(x,y) + geom_tile()" -o "$tmpdir/na.pdf" 2>"$tmpdir/na.err"
+grep 'warning: column `y` is treated as text because row 4 is "N/A"' "$tmpdir/na.err" >/dev/null
+
+# ---- D12: regions() accepts a numeric chromosome column ---------------------
+printf '1\t100\t200\tA\n' >"$tmpdir/win-num.bed"
+printf '1\t120\t150\ta\n' >"$tmpdir/iv-num.bed"
+"$CINDERPLOT" "regions(\"$tmpdir/win-num.bed\") + interval(\"$tmpdir/iv-num.bed\")" \
+    -o "$tmpdir/win-num.pdf"
+test -s "$tmpdir/win-num.pdf"
+
+# ---- D21: the tabix name walk is linear (40,000 scaffolds, target last) -----
+python3 - "$tmpdir/many.bed.gz" <<'PY'
+import gzip, struct, sys, zlib
+def bgzf(data):
+    c = zlib.compressobj(6, zlib.DEFLATED, -15); d = c.compress(data) + c.flush()
+    bsize = 12 + 6 + len(d) + 8
+    return (b'\x1f\x8b\x08\x04' + b'\0' * 5 + b'\xff' + struct.pack('<H', 6) + b'BC' + struct.pack('<HH', 2, bsize - 1)
+            + d + struct.pack('<II', zlib.crc32(data) & 0xffffffff, len(data)))
+N = 40000
+rec = b'scaf%05d\t100\t900\tg\t0\t+\t100\t900\t0\t1\t800,\t0,\n' % (N - 1)
+open(sys.argv[1], 'wb').write(bgzf(rec) + bgzf(b''))
+names = b''.join(b'scaf%05d\0' % i for i in range(N))
+hdr = b'TBI\1' + struct.pack('<8i', N, 0, 1, 2, 3, 0, 0, len(names)) + names
+empty = struct.pack('<i', 0) + struct.pack('<i', 0)                 # n_bin=0, n_intv=0
+last = (struct.pack('<i', 1) + struct.pack('<Ii', 4681, 1) + struct.pack('<QQ', 0, 1 << 16)
+        + struct.pack('<i', 1) + struct.pack('<Q', 0))
+open(sys.argv[1] + '.tbi', 'wb').write(gzip.compress(hdr + empty * (N - 1) + last))
+PY
+timeout 5 "$CINDERPLOT" "region(\"scaf39999:50-950\") + genes(\"$tmpdir/many.bed.gz\")" \
+    -o "$tmpdir/many.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/many.pdf" - | grep -q '^g$'          # the record was found
+fi
+
+# ==== 2026-09-10 review fixes: heatmap, palette, breaks, clustering ==================================
+
+# ---- annotation chained to an annotation inherits the clustered order ----
+# B right_of A right_of m: A followed the clustering, B showed file order.
+# Both strips come from the same file, so their SVG fills must agree cell for
+# cell; cluster=rows on a matrix whose input order is not the clustered one.
+printf 'rn,a,b\nr1,0,0\nr2,9,9\nr3,0.1,0\nr4,9.1,9\nr5,0.2,0\nr6,9.2,9\n' >"$tmpdir/chain.csv"
+printf 'grp\nlow\nhigh\nlow\nhigh\nlow\nhigh\n' >"$tmpdir/chaingrp.csv"
+"$CINDERPLOT" "$tmpdir/chain.csv + heatmap(name=\"m\", cluster=rows)
+     + annotation(\"$tmpdir/chaingrp.csv\", right_of(\"m\"), name=\"A\")
+     + annotation(\"$tmpdir/chaingrp.csv\", right_of(\"A\"), name=\"B\")" \
+    --size 4x4 -o "$tmpdir/chain.svg"
+# the two strips are 6 rects each, drawn A then B, right after the 12 cells
+fills=$(grep -o 'fill="rgb([^"]*"' "$tmpdir/chain.svg" | sed -n '13,24p')
+a=$(echo "$fills" | head -6 | tr '\n' ' '); b=$(echo "$fills" | tail -6 | tr '\n' ' ')
+if [ "$a" != "$b" ]; then
+    echo "annotation anchored to an annotation lost the clustered row order" >&2
+    exit 1
+fi
+
+# ---- gradient2: the midpoint is the mid colour even when the range starts there ----
+# A non-negative matrix under midpoint=0 painted its zeros the LOW colour
+# (t = 0 short-circuit) while 0.01 was white.
+printf 'rn,a,b\nr1,0,0.01\nr2,5,10\n' >"$tmpdir/nonneg.csv"
+"$CINDERPLOT" "$tmpdir/nonneg.csv + heatmap(cluster=none)
+     + scale_fill_gradient2(low=\"#0000FF\", mid=\"#FFFFFF\", high=\"#FF0000\")" \
+    --size 3x3 -o "$tmpdir/nonneg.svg"
+if grep -q 'fill="rgb(0%, 0%, 100%)"' "$tmpdir/nonneg.svg"; then
+    echo "gradient2 painted the midpoint value with the low colour" >&2
+    exit 1
+fi
+
+# ---- gradient2 colourbar is painted by value, so white sits at the midpoint ----
+# range [-1, 3], midpoint 0: white belongs a quarter of the way up the bar,
+# not at its middle. The bar is 64 strips; strip 16 (v = -1 + 4*16.5/64 = 0.03)
+# must be near-white and strip 32 (v = 1) clearly red.
+printf 'rn,a,b\nr1,-1,3\nr2,0,1\n' >"$tmpdir/asym.csv"
+"$CINDERPLOT" "$tmpdir/asym.csv + heatmap(name=\"m\", cluster=none) + legend(right_of(\"m\"))
+     + scale_fill_gradient2(low=\"#0000FF\", mid=\"#FFFFFF\", high=\"#FF0000\")" \
+    --size 3x3 -o "$tmpdir/asym.svg"
+python3 - "$tmpdir/asym.svg" <<'PY'
+import re, sys
+svg = open(sys.argv[1]).read()
+# 4 cells, then the 64 legend strips, bottom (lowest value) first
+fills = re.findall(r'fill="rgb\(([0-9.]+)%, ([0-9.]+)%, ([0-9.]+)%\)"', svg)
+bar = [tuple(float(c) for c in f) for f in fills[4:68]]
+lo, mid = bar[16], bar[32]
+# strip 16 is within a hair of the midpoint: all channels near 100%
+if min(lo) < 94 or mid[2] > 80 or mid[0] < 99:
+    sys.exit("colourbar does not follow the gradient2 value mapping: %s %s" % (lo, mid))
+PY
+
+# ---- heatmap annotation keyed on its first column ----
+# A key column that lists the rows in another order used to be ignored and the
+# values read positionally.
+printf 'rn,a,b\nr1,1,2\nr2,3,4\nr3,5,6\n' >"$tmpdir/km.csv"
+printf 'rn,grp\nr3,x\nr1,y\nr2,y\n' >"$tmpdir/kann.csv"
+printf 'rn,grp\nr1,y\nr2,y\nr3,x\n' >"$tmpdir/kann-inorder.csv"
+"$CINDERPLOT" "$tmpdir/km.csv + heatmap(name=\"m\", cluster=none)
+     + annotation(\"$tmpdir/kann.csv\", right_of(\"m\"))" --size 3x3 -o "$tmpdir/k1.png"
+"$CINDERPLOT" "$tmpdir/km.csv + heatmap(name=\"m\", cluster=none)
+     + annotation(\"$tmpdir/kann-inorder.csv\", right_of(\"m\"))" --size 3x3 -o "$tmpdir/k2.png"
+cmp -s "$tmpdir/k1.png" "$tmpdir/k2.png" || {
+    echo "annotation key column was ignored (positional alignment)" >&2; exit 1; }
+# a partial match is a mistake: error naming the first unknown key
+printf 'rn,grp\nr1,y\nr2,y\nr9,x\n' >"$tmpdir/kbad.csv"
+if "$CINDERPLOT" "$tmpdir/km.csv + heatmap(name=\"m\", cluster=none)
+        + annotation(\"$tmpdir/kbad.csv\", right_of(\"m\"))" -o "$tmpdir/k3.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "annotation with a partly matching key column unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'key `r9` is not a row name' "$tmpdir/err" >/dev/null
+
+# ---- two objects in one slot error instead of overpainting ----
+printf 'grp\nx\ny\n' >"$tmpdir/slot.csv"
+if "$CINDERPLOT" "$tmpdir/km.csv + heatmap(name=\"m\", cluster=none)
+        + annotation(\"$tmpdir/kann-inorder.csv\", right_of(\"m\"), name=\"A\")
+        + annotation(\"$tmpdir/kann-inorder.csv\", right_of(\"m\"), name=\"B\")" \
+        -o "$tmpdir/slot.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "two annotations in one slot unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'slot right_of(m) already taken by the annotation `A`; anchor to right_of("A")' "$tmpdir/err" >/dev/null
+# legends are margin chrome and still stack beside a strip in the same slot
+"$CINDERPLOT" "$tmpdir/km.csv + heatmap(name=\"m\", cluster=none)
+     + annotation(\"$tmpdir/kann-inorder.csv\", right_of(\"m\")) + legend(right_of(\"m\"))" \
+    -o "$tmpdir/slotleg.pdf"
+test -s "$tmpdir/slotleg.pdf"
+
+# ---- colourbar breaks reach an exact [0, 0.3] endpoint; no -0.0 ----
+printf 'rn,a,b\nr1,0,0.3\nr2,0.1,0.2\n' >"$tmpdir/p03.csv"
+"$CINDERPLOT" "$tmpdir/p03.csv + heatmap(name=\"m\", cluster=none) + legend(right_of(\"m\"))" \
+    --size 3x3 -o "$tmpdir/p03.pdf"
+pdftotext "$tmpdir/p03.pdf" - | grep -x '0.3' >/dev/null
+printf 'rn,a,b\nr1,0,-0.3\nr2,-0.1,-0.2\n' >"$tmpdir/m03.csv"
+"$CINDERPLOT" "$tmpdir/m03.csv + heatmap(name=\"m\", cluster=none) + legend(right_of(\"m\"))" \
+    --size 3x3 -o "$tmpdir/m03.pdf"
+if pdftotext "$tmpdir/m03.pdf" - | grep -q -- '-0.0'; then
+    echo "colourbar printed -0.0" >&2
+    exit 1
+fi
+pdftotext "$tmpdir/m03.pdf" - | grep -x -- '-0.3' >/dev/null
+
+# ---- labels=on prints counts in full ----
+printf 'rn,a,b\nr1,1234,100000\nr2,12345678,0.5\n' >"$tmpdir/counts.csv"
+"$CINDERPLOT" "$tmpdir/counts.csv + heatmap(cluster=none, labels=on)" \
+    --size 6x3 -o "$tmpdir/counts.pdf"
+pdftotext "$tmpdir/counts.pdf" - | grep -x '12345678' >/dev/null
+pdftotext "$tmpdir/counts.pdf" - | grep -x '1234' >/dev/null
+
+# ---- tiny ranges get distinct axis / colourbar labels ----
+# breaks all under 1e-6 printed 0 0 0 0 0 (absolute 1e-6 slack, six decimals)
+printf 'x,y\n1,1e-6\n2,3e-6\n' >"$tmpdir/tiny.csv"
+"$CINDERPLOT" "$tmpdir/tiny.csv + aes(x, y) + geom_point()" --size 3x3 -o "$tmpdir/tiny.pdf"
+n=$(pdftotext "$tmpdir/tiny.pdf" - | grep -c 'e-06')
+if [ "$n" -lt 3 ]; then
+    echo "axis labels under 1e-6 are not distinct" >&2
+    exit 1
+fi
+# a range with an offset keeps counting decimals rather than printing 1 1 1
+printf 'x,y\n1,1\n2,1.0000001\n' >"$tmpdir/offset.csv"
+"$CINDERPLOT" "$tmpdir/offset.csv + aes(x, y) + geom_point()" --size 3x3 -o "$tmpdir/offset.pdf"
+pdftotext "$tmpdir/offset.pdf" - | grep -x '1.000000050' >/dev/null
+
+# ---- ward.D2 ties merge as R does ----
+# integer data is all exact ties; R decides them through its cached
+# nearest-neighbour list and its squared-then-sqrt'd distances. This 5x4
+# matrix is a case where a plain lowest-index scan merges differently.
+printf 'rn,c0,c1,c2,c3\nr0,1,1,2,2\nr1,0,0,2,2\nr2,0,0,2,1\nr3,0,2,0,1\nr4,1,1,0,0\n' >"$tmpdir/tie.csv"
+"$CINDERPLOT" "$tmpdir/tie.csv + heatmap(cluster=rows, rownames=right)" \
+    --size 3x3 -o "$tmpdir/tie.pdf"
+order=$(pdftotext "$tmpdir/tie.pdf" - | grep '^r[0-9]$' | tr '\n' ' ')
+# R: hclust(dist(m), "ward.D2")$order = 4 5 1 2 3 -> r3 r4 r0 r1 r2
+if [ "$order" != "r3 r4 r0 r1 r2 " ]; then
+    echo "ward.D2 tie order differs from R: $order" >&2
+    exit 1
+fi
+
+# ---- clustering errors name the axis ----
+printf 'rn,a,b\nr1,1,2\n' >"$tmpdir/onerow.csv"
+if "$CINDERPLOT" "$tmpdir/onerow.csv + heatmap(cluster=both)" -o "$tmpdir/onerow.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "clustering a 1-row matrix unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'clustering rows: need at least 2 rows' "$tmpdir/err" >/dev/null
+printf 'rn,a,b\nr1,1,NA\nr2,NA,2\n' >"$tmpdir/nacol.csv"
+if "$CINDERPLOT" "$tmpdir/nacol.csv + heatmap(cluster=cols)" -o "$tmpdir/nacol.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "clustering columns that share no values unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'clustering columns: .*share no complete values' "$tmpdir/err" >/dev/null
+
+# ---- rownames= on a matrix without row names errors ----
+printf 'a,b\n1,2\n3,4\n' >"$tmpdir/noname.csv"
+if "$CINDERPLOT" "$tmpdir/noname.csv + heatmap(cluster=none, rownames=left)" \
+        -o "$tmpdir/noname.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "rownames=left on a nameless matrix unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'rownames=left: the matrix has no row names' "$tmpdir/err" >/dev/null
+
+# ---- dendrogram beside an annotation beside the heatmap ----
+"$CINDERPLOT" "$tmpdir/chain.csv + heatmap(name=\"m\", cluster=rows)
+     + annotation(\"$tmpdir/chaingrp.csv\", left_of(\"m\"), name=\"A\")
+     + dendrogram(left_of(\"A\"))" --size 4x4 -o "$tmpdir/dendann.pdf"
+test -s "$tmpdir/dendann.pdf"
+
+# ---- legend(right_of("m")) on an unnamed heatmap says how to name it ----
+if "$CINDERPLOT" "$tmpdir/km.csv + heatmap(cluster=none) + legend(right_of(\"m\"))" \
+        -o "$tmpdir/noname-leg.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "legend on an unnamed heatmap unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'heatmap has no name=' "$tmpdir/err" >/dev/null
+grep 'heatmap(name="m"' "$tmpdir/err" >/dev/null
+
+# ---- hex colours: no sign/0x/blank inside; #RGB shorthand accepted ----
+for bad in '#+f0000' '#0x0000' '# f0000'; do
+    if "$CINDERPLOT" "$tmpdir/km.csv + heatmap(cluster=none, box=\"$bad\")" \
+            -o "$tmpdir/hex.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+        echo "box=\"$bad\" unexpectedly parsed as a colour" >&2
+        exit 1
+    fi
+done
+"$CINDERPLOT" "$tmpdir/km.csv + heatmap(cluster=none, box=\"#f00\")" --size 3x3 -o "$tmpdir/hex3.png"
+"$CINDERPLOT" "$tmpdir/km.csv + heatmap(cluster=none, box=\"#ff0000\")" --size 3x3 -o "$tmpdir/hex6.png"
+cmp -s "$tmpdir/hex3.png" "$tmpdir/hex6.png" || { echo "#RGB shorthand differs from #RRGGBB" >&2; exit 1; }
+
+# ==== 2026-09-10 review fixes: grammar scales, axes, legends, auto-fit ===============================
+
+# ---- legend folds past the layout grid are refused, not written off the end ----
+printf 'x,y,g\n' >"$tmpdir/leg100.csv"
+i=0
+while [ "$i" -lt 100 ]; do
+    printf '%s,%s,L%03d\n' "$i" "$i" "$i" >>"$tmpdir/leg100.csv"
+    i=$((i + 1))
+done
+if "$CINDERPLOT" "$tmpdir/leg100.csv + aes(x,y,colour=g) + geom_point() + guides(colour=guide_legend(nrow=1))" \
+        -o "$tmpdir/leg100.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "a 100-column legend fold unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'exceeds the layout limit' "$tmpdir/err" >/dev/null
+# the same guard covers an annotation() band with more levels than the grid holds
+printf 'x,y\n' >"$tmpdir/x130.csv"
+printf 'x,v\n' >"$tmpdir/ann130.csv"
+i=0
+while [ "$i" -lt 130 ]; do
+    printf 'c%03d,%s\n' "$i" "$i" >>"$tmpdir/x130.csv"
+    printf 'c%03d,t%03d\n' "$i" "$i" >>"$tmpdir/ann130.csv"
+    i=$((i + 1))
+done
+if "$CINDERPLOT" "$tmpdir/x130.csv + aes(x,y) + geom_col() + annotation($tmpdir/ann130.csv)" \
+        -o "$tmpdir/ann130.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "a 130-level annotation band legend unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'exceeds the layout limit' "$tmpdir/err" >/dev/null
+
+# ---- breaks=c(...) beyond 31 entries: minor gridlines stay in order ----
+# The minor-break buffer used to hold 32; the overflow put the 33rd minor and
+# on at garbage positions. Vertical minor gridlines must be emitted in
+# increasing x.
+printf 'x,y\n0,0\n100,100\n' >"$tmpdir/two.csv"
+br=$(seq -s, 0 100)
+"$CINDERPLOT" "$tmpdir/two.csv + aes(x,y) + geom_point() + scale_x_continuous(breaks=c($br))" \
+    --size 7x5 -o "$tmpdir/br101.svg"
+grep 'stroke-width="0.266745"' "$tmpdir/br101.svg" \
+    | grep -o 'd="M [0-9.]* [0-9.]* L [0-9.]*' \
+    | awk '$2 == $5 { if (n && $2 + 0 <= last) bad = 1; last = $2 + 0; n++ } END { exit bad }'
+
+# ---- a log axis spanning less than a decade still gets labelled ----
+printf 'x,y\n1,2\n2,4\n3,8\n' >"$tmpdir/narrow.csv"
+"$CINDERPLOT" "$tmpdir/narrow.csv + aes(x,y) + geom_point() + scale_y_log10()" \
+    -o "$tmpdir/narrow.pdf"
+pdftotext "$tmpdir/narrow.pdf" - | grep -x '4' >/dev/null
+pdftotext "$tmpdir/narrow.pdf" - | grep -x '8' >/dev/null
+
+# ---- log_breaks thinning keeps 10^0 (anchored on multiples of the step) ----
+printf 'x,y\n1,1e-12\n2,1e12\n' >"$tmpdir/wide.csv"
+"$CINDERPLOT" "$tmpdir/wide.csv + aes(x,y) + geom_point() + scale_y_log10()" \
+    -o "$tmpdir/wide.pdf"
+pdftotext "$tmpdir/wide.pdf" - | grep -x '100' >/dev/null
+
+# ---- Inf is a missing value, not a data point ----
+printf 'x,y\n1,1\n2,Inf\n3,3\n' >"$tmpdir/inf.csv"
+"$CINDERPLOT" "$tmpdir/inf.csv + aes(x,y) + geom_point()" \
+    -o "$tmpdir/inf.pdf" 2>"$tmpdir/inf.err"
+grep 'removed 1 rows with missing values' "$tmpdir/inf.err" >/dev/null
+pdftotext "$tmpdir/inf.pdf" - | grep -x '2.0' >/dev/null
+
+# ---- a value <= 0 cannot sit on a log axis: dropped and reported ----
+printf 'x,y\n1,1\n2,10\n3,100\n' >"$tmpdir/log.csv"
+"$CINDERPLOT" "$tmpdir/log.csv + aes(x,y) + geom_point() + scale_y_log10() + geom_hline(yintercept=0)" \
+    -o "$tmpdir/hl0.pdf" 2>"$tmpdir/hl0.err"
+grep 'dropped 1 reference value' "$tmpdir/hl0.err" >/dev/null
+pdftotext "$tmpdir/hl0.pdf" - | grep -x '102' >/dev/null
+printf 'x,y,lo,hi\n1,10,0,12\n2,12,8,14\n' >"$tmpdir/eb0.csv"
+"$CINDERPLOT" "$tmpdir/eb0.csv + aes(x,y,ymin=lo,ymax=hi) + geom_point() + geom_errorbar() + scale_y_log10()" \
+    -o "$tmpdir/eb0.pdf" 2>"$tmpdir/eb0.err"
+grep 'removed 1 rows with non-positive values on a log axis' "$tmpdir/eb0.err" >/dev/null
+
+# ---- geom_abline() on a log axis is drawn in transformed space ----
+# An endpoint below zero used to give TY = NaN and no line at all; the y axis
+# now follows the line to 10^-5.
+printf 'x,y\n-5,1\n5,100\n' >"$tmpdir/ab.csv"
+"$CINDERPLOT" "$tmpdir/ab.csv + aes(x,y) + geom_point() + scale_y_log10() + geom_abline(intercept=0, slope=1)" \
+    -o "$tmpdir/ab.pdf"
+pdftotext "$tmpdir/ab.pdf" - | grep -x '10-4' >/dev/null
+# scale_x_log2(): the base is honoured (pow(10) used to train y to 10^10)
+printf 'x,y\n1,1\n5,10\n30,100\n' >"$tmpdir/log2.csv"
+"$CINDERPLOT" "$tmpdir/log2.csv + aes(x,y) + geom_point() + scale_x_log2() + geom_abline(intercept=0, slope=1)" \
+    -o "$tmpdir/ab2.pdf"
+if pdftotext "$tmpdir/ab2.pdf" - | grep -x '80000' >/dev/null; then
+    echo "geom_abline() under scale_x_log2() still trains y through pow(10)" >&2
+    exit 1
+fi
+
+# ---- free_y panels train on what fixed scales train on ----
+printf 'x,y,lo,hi,f\nA,10,2,12,p1\nB,12,8,14,p1\nA,100,20,120,p2\nB,120,80,140,p2\n' >"$tmpdir/eb.csv"
+# the errorbar lower bound (2) pulls panel p1's axis down to 5
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x,y,ymin=lo,ymax=hi) + geom_point() + geom_errorbar() + facet_wrap(~f, scales=\"free_y\")" \
+    -o "$tmpdir/ebfree.pdf"
+pdftotext "$tmpdir/ebfree.pdf" - | grep -x '5' >/dev/null
+# geom_hline(30) is inside panel p1's range, not off its top
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x,y) + geom_point() + facet_wrap(~f, scales=\"free_y\") + geom_hline(yintercept=30)" \
+    -o "$tmpdir/hlfree.pdf"
+pdftotext "$tmpdir/hlfree.pdf" - | grep -x '30' >/dev/null
+
+# ---- breaks=/labels= are honoured on a log axis ----
+"$CINDERPLOT" "$tmpdir/log.csv + aes(x,y) + geom_point() + scale_y_log10() + scale_y_continuous(breaks=c(1,10,100), labels=c(\"one\",\"ten\",\"hundred\"))" \
+    -o "$tmpdir/logbr.pdf"
+pdftotext "$tmpdir/logbr.pdf" - | grep -x 'hundred' >/dev/null
+"$CINDERPLOT" "$tmpdir/log.csv + aes(x,y) + geom_point() + scale_y_log10() + scale_y_continuous(breaks=c(1,5,50))" \
+    -o "$tmpdir/logbr2.pdf"
+pdftotext "$tmpdir/logbr2.pdf" - | grep -x '50' >/dev/null
+
+# ---- coord_polar() refuses the mappings it would ignore ----
+printf 'x,y,v\nA,1,1\nB,2,2\nC,3,3\n' >"$tmpdir/pol.csv"
+if "$CINDERPLOT" "$tmpdir/pol.csv + aes(x=factor(x), y=y, colour=v) + geom_point() + coord_polar()" \
+        -o "$tmpdir/pol.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "coord_polar() with a continuous colour unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'coord_polar(): continuous colour= mappings are not implemented' "$tmpdir/err" >/dev/null
+
+# ---- auto-fit under coord_flip() grows the HEIGHT for the categories ----
+printf 'x,y\n' >"$tmpdir/cat40.csv"
+i=0
+while [ "$i" -lt 40 ]; do
+    printf 'category_%02d,%s\n' "$i" "$i" >>"$tmpdir/cat40.csv"
+    i=$((i + 1))
+done
+"$CINDERPLOT" "$tmpdir/cat40.csv + aes(x,y) + geom_col() + coord_flip()" -o "$tmpdir/flip40.svg"
+h=$(head -c 400 "$tmpdir/flip40.svg" | grep -o 'height="[0-9.]*' | head -1 | tr -cd '0-9.' | cut -d. -f1)
+if [ "$h" -lt 400 ]; then
+    echo "coord_flip() auto-fit left 40 categories in a ${h}pt-tall canvas" >&2
+    exit 1
+fi
+
+# ---- limits/breaks that cannot apply are errors, not no-ops ----
+if "$CINDERPLOT" "$tmpdir/two.csv + aes(x,y) + geom_point() + xlim(300,50)" \
+        -o "$tmpdir/rev.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "reversed xlim() unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'lo must be < hi (got 300, 50)' "$tmpdir/err" >/dev/null
+printf 'x,y\nA,1\nB,2\nC,3\n' >"$tmpdir/disc.csv"
+if "$CINDERPLOT" "$tmpdir/disc.csv + aes(x,y) + geom_col() + xlim(0,5)" \
+        -o "$tmpdir/dlim.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "xlim() on a discrete x unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'on a discrete x axis is not implemented' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/disc.csv + aes(x,y) + geom_col() + scale_x_continuous(breaks=c(1,2))" \
+        -o "$tmpdir/dbr.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "breaks= on a discrete x unexpectedly succeeded" >&2
+    exit 1
+fi
+grep 'breaks=/labels= on a discrete x axis is not implemented' "$tmpdir/err" >/dev/null
+
+# ---- inside legends under free_colour work in a multi-row facet grid ----
+printf 'x,y,c,f\n1,1,a,p1\n2,2,b,p2\n3,3,c,p3\n4,4,d,p4\n' >"$tmpdir/fc4.csv"
+"$CINDERPLOT" "$tmpdir/fc4.csv + aes(x,y,colour=c) + geom_point() + facet_wrap(~f, scales=\"free_colour\") + theme(legend.position=\"inside\")" \
+    -o "$tmpdir/fc4.pdf"
+test -s "$tmpdir/fc4.pdf"
+
+# ---- a many-level legend folds in auto mode instead of stretching the canvas ----
+printf 'x,y,g\n' >"$tmpdir/leg32.csv"
+i=0
+while [ "$i" -lt 32 ]; do
+    printf '%s,%s,level_%02d\n' "$i" "$i" "$i" >>"$tmpdir/leg32.csv"
+    i=$((i + 1))
+done
+"$CINDERPLOT" "$tmpdir/leg32.csv + aes(x,y,colour=g) + geom_point()" -o "$tmpdir/leg32.svg"
+h=$(head -c 400 "$tmpdir/leg32.svg" | grep -o 'height="[0-9.]*"' | head -1 | tr -cd '0-9.' | cut -d. -f1)
+if [ "$h" -gt 400 ]; then
+    echo "a 32-level legend stretched the auto-fit canvas to ${h}pt instead of folding" >&2
+    exit 1
+fi
+# with a fixed size that cannot hold it, the clip is reported
+"$CINDERPLOT" "$tmpdir/leg32.csv + aes(x,y,colour=g) + geom_point()" --size 6x4 \
+    -o "$tmpdir/leg32.pdf" 2>"$tmpdir/leg32.err"
+grep 'legend stack needs' "$tmpdir/leg32.err" >/dev/null
+
+# ---- clipping warnings: an over-wide title, over-tall rotated labels ----
+"$CINDERPLOT" "$tmpdir/two.csv + aes(x,y) + geom_point() + labs(title=\"A very long title that goes on and on and on and will certainly not fit in the default six inch canvas at all\")" \
+    -o "$tmpdir/title.pdf" 2>"$tmpdir/title.err"
+grep 'is wider than the 6.0in canvas' "$tmpdir/title.err" >/dev/null
+printf 'x,y\n' >"$tmpdir/long30.csv"
+i=0
+while [ "$i" -lt 30 ]; do
+    printf 'a_rather_long_category_label_%02d,%s\n' "$i" "$i" >>"$tmpdir/long30.csv"
+    i=$((i + 1))
+done
+"$CINDERPLOT" "$tmpdir/long30.csv + aes(x,y) + geom_col()" \
+    -o "$tmpdir/long30.pdf" 2>"$tmpdir/long30.err"
+grep 'rotated x tick labels take' "$tmpdir/long30.err" >/dev/null
+
+# ==== 2026-09-10 review fixes: grammar geoms =========================================================
+
+# ---- B3: geom_tile() + geom_text() with a string y (the confusion-matrix idiom) ----
+# used to read yc->num[] of a text column and segfault; with factor(numeric) y
+# the labels landed at the raw value instead of the factor slot.
+printf 'a,b,v\nx,p,1\nx,q,2\ny,p,3\n' >"$tmpdir/tiletext.csv"
+"$CINDERPLOT" \
+    "$tmpdir/tiletext.csv + aes(a,b,fill=v,label=v) + geom_tile() + geom_text(colour=\"white\")" \
+    -o "$tmpdir/tiletext.svg" --size 4x3
+test -s "$tmpdir/tiletext.svg"
+test "$(grep -c '<text [^>]*fill="#ffffff"' "$tmpdir/tiletext.svg")" -eq 3
+printf 'a,b,v\nx,10,1\nx,20,2\ny,10,3\n' >"$tmpdir/tiletextf.csv"
+"$CINDERPLOT" \
+    "$tmpdir/tiletextf.csv + aes(a,factor(b),fill=v,label=v) + geom_tile() + geom_text(colour=\"white\")" \
+    -o "$tmpdir/tiletextf.svg" --size 4x3
+# every label lands inside the panel (at its factor slot), so all three survive the clip
+test "$(grep -c '<text [^>]*fill="#ffffff"' "$tmpdir/tiletextf.svg")" -eq 3
+
+# ---- C5: geom_col() stacks duplicated x categories (position="stack") ----
+# A=1 + A=2 used to draw two overlapping bars reading A=2; ggplot sums them.
+# Negatives stack downward from 0. The bar tops are read back from the SVG.
+printf 'x,y\nA,1\nA,2\nB,3\nC,-1\nC,-2\n' >"$tmpdir/coldup.csv"
+"$CINDERPLOT" "$tmpdir/coldup.csv + aes(x,y) + geom_col()" -o "$tmpdir/coldup.svg" --size 4x3
+grep 'fill="rgb(34.9%, 34.9%, 34.9%)"' "$tmpdir/coldup.svg" \
+    | sed 's/.*d="M [0-9.]* \([0-9.]*\) .*/\1/' >"$tmpdir/coldup.tops"
+test "$(wc -l <"$tmpdir/coldup.tops")" -eq 5
+# the second A segment tops out where the B bar (3) does
+test "$(sed -n 2p "$tmpdir/coldup.tops")" = "$(sed -n 3p "$tmpdir/coldup.tops")"
+# the second C segment starts where the first one ends (stacked down, not overdrawn)
+c1bot=$(grep 'fill="rgb(34.9%, 34.9%, 34.9%)"' "$tmpdir/coldup.svg" | sed -n 4p \
+    | sed 's/.*L [0-9.]* \([0-9.]*\) L [0-9.]* [0-9.]* Z.*/\1/')
+test "$(sed -n 5p "$tmpdir/coldup.tops")" = "$c1bot"
+
+# ---- C6: histogram bins are right-closed (a, b] and train the x scale ----
+# 0..10 with bins=6 is 2,2,2,2,2,1 in ggplot (edges -1,1,...,11); left-closed
+# bins gave 1,2,2,2,2,2. And the scale is trained on the edges, so the first
+# bar starts inside the panel instead of being cut by its left edge.
+printf 'x\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n' >"$tmpdir/hist6.csv"
+"$CINDERPLOT" "$tmpdir/hist6.csv + aes(x) + geom_histogram(bins=6)" -o "$tmpdir/hist6.svg" --size 4x3
+grep 'fill="rgb(34.9%, 34.9%, 34.9%)"' "$tmpdir/hist6.svg" \
+    | sed 's/.*d="M \([0-9.-]*\) \([0-9.-]*\) .*/\1 \2/' >"$tmpdir/hist6.bars"
+test "$(wc -l <"$tmpdir/hist6.bars")" -eq 6
+test "$(sed -n 1p "$tmpdir/hist6.bars" | cut -d' ' -f2)" = "$(sed -n 2p "$tmpdir/hist6.bars" | cut -d' ' -f2)"
+test "$(sed -n 6p "$tmpdir/hist6.bars" | cut -d' ' -f2)" != "$(sed -n 1p "$tmpdir/hist6.bars" | cut -d' ' -f2)"
+panelx=$(grep 'fill="rgb(92.2%, 92.2%, 92.2%)"' "$tmpdir/hist6.svg" | head -1 | sed 's/.*d="M \([0-9.-]*\) .*/\1/')
+barx=$(sed -n 1p "$tmpdir/hist6.bars" | cut -d' ' -f1)
+awk -v p="$panelx" -v b="$barx" 'BEGIN { exit !(b > p + 5) }'
+
+# ---- C7: histogram under facet_wrap(scales="free_x") bins each panel's own range ----
+# a panel whose data span less than one global bin used to be one slab; ggplot
+# gives panel a three bins (2,1,1) and panel b one, four bars in all
+printf 'x,f\n1,a\n2,a\n3,a\n4,a\n10,b\n' >"$tmpdir/histfree.csv"
+"$CINDERPLOT" "$tmpdir/histfree.csv + aes(x) + geom_histogram(bins=3) + facet_wrap(~f, scales=\"free_x\")" \
+    -o "$tmpdir/histfree.svg" --size 6x3
+test "$(grep -c 'fill="rgb(34.9%, 34.9%, 34.9%)"' "$tmpdir/histfree.svg")" -eq 4
+
+# ---- C8: geom_boxplot() under facet_wrap(scales="free_x") uses the panel's x slots ----
+# boxes for levels c,d in the second panel used to be drawn at global slots
+# 3-4 and clipped away; every other discrete geom already renumbered per panel
+printf 'x,y,f\na,1,P1\na,2,P1\na,3,P1\nb,2,P1\nb,3,P1\nb,4,P1\nc,5,P2\nc,6,P2\nc,7,P2\nd,1,P2\nd,2,P2\nd,9,P2\n' >"$tmpdir/boxfree.csv"
+"$CINDERPLOT" "$tmpdir/boxfree.csv + aes(x,y) + geom_boxplot() + facet_wrap(~f, scales=\"free_x\")" \
+    -o "$tmpdir/boxfree.svg" --size 6x3
+test "$(grep -c 'fill="rgb(100%, 100%, 100%)"' "$tmpdir/boxfree.svg")" -eq 4
+
+# ---- C10: annotate() is transposed by coord_flip() ----
+# under the flip the annotation's x runs up the left axis, so moving x moves
+# the label vertically; it used to be emitted after the transpose and stayed put
+printf 'x,y\nA,1\nB,3\nC,-3\n' >"$tmpdir/annflip.csv"
+"$CINDERPLOT" "$tmpdir/annflip.csv + aes(x,y) + geom_col() + coord_flip() + annotate(\"text\", x=1, y=1, label=\"hi\")" \
+    -o "$tmpdir/annflip1.svg" --size 4x3
+"$CINDERPLOT" "$tmpdir/annflip.csv + aes(x,y) + geom_col() + coord_flip() + annotate(\"text\", x=3, y=1, label=\"hi\")" \
+    -o "$tmpdir/annflip3.svg" --size 4x3
+pos1=$(grep -o '<text[^>]*>hi</text>' "$tmpdir/annflip1.svg" | sed 's/.*x="\([0-9.]*\)" y="\([0-9.]*\)".*/\1 \2/')
+pos3=$(grep -o '<text[^>]*>hi</text>' "$tmpdir/annflip3.svg" | sed 's/.*x="\([0-9.]*\)" y="\([0-9.]*\)".*/\1 \2/')
+test "${pos1% *}" = "${pos3% *}"          # same horizontal position
+test "${pos1#* }" != "${pos3#* }"         # different height
+
+# ---- C15: geom_segment(data=) goes through scale_x_log10() ----
+# a 10..100 segment from a layer file was placed at raw x on the log10 panel
+# (off the page); it now spans the two points it joins
+printf 'x,y,xend\n10,1,10\n100,2,100\n' >"$tmpdir/seglog.csv"
+printf 'x,xend,y\n10,100,1.5\n' >"$tmpdir/seglogd.csv"
+"$CINDERPLOT" "$tmpdir/seglog.csv + aes(x,y,xend=xend) + geom_point() + geom_segment(data=\"$tmpdir/seglogd.csv\", colour=\"red\") + scale_x_log10()" \
+    -o "$tmpdir/seglog.svg" --size 4x3
+test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/seglog.svg")" -eq 1
+
+# ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
+# with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
+# and through the neighbouring bars; a cap is now narrower than the x spacing
+printf 'x,y,lo,hi\n0.1,1,0.5,1.5\n0.2,2,1.5,2.5\n0.3,3,2.5,3.5\n' >"$tmpdir/ebres.csv"
+"$CINDERPLOT" "$tmpdir/ebres.csv + aes(x,y,ymin=lo,ymax=hi) + geom_errorbar()" -o "$tmpdir/ebres.svg" --size 4x3
+grep 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/ebres.svg" | sed 's/.*d="M \([0-9.-]*\) \([0-9.-]*\) L \([0-9.-]*\) \([0-9.-]*\).*/\1 \2 \3 \4/' >"$tmpdir/ebres.lines"
+# stems (x0 == x1) of the first two rows give the spacing; caps (y0 == y1) the width
+awk '$1 == $3 { s[n++] = $1 } $2 == $4 { w = $3 - $1 }
+     END { sp = s[1] - s[0]; if (sp < 0) sp = -sp; exit !(w > 0 && w < sp) }' "$tmpdir/ebres.lines"
+
+# ---- C21: a continuous colour= on geom_line/density/boxplot is an error ----
+# these drew black geometry next to a colourbar; a layer colour= still overrides
+printf 'x,y,v\n1,1,0.1\n2,2,0.5\n3,3,0.9\n' >"$tmpdir/contcol.csv"
+for g in "aes(x,y,colour=v) + geom_line()" "aes(x,colour=v) + geom_density()" \
+         "aes(factor(x),y,colour=v) + geom_boxplot()"; do
+    if "$CINDERPLOT" "$tmpdir/contcol.csv + $g" -o "$tmpdir/contcol.pdf" \
+            >"$tmpdir/out" 2>"$tmpdir/err"; then
+        echo "continuous colour on $g unexpectedly succeeded" >&2
+        exit 1
+    fi
+    grep 'continuous colour= on geom_.*use factor()' "$tmpdir/err" >/dev/null
+done
+"$CINDERPLOT" "$tmpdir/contcol.csv + aes(x,y,colour=v) + geom_point() + geom_line(colour=\"grey\")" \
+    -o "$tmpdir/contcol-ok.pdf"
+test -s "$tmpdir/contcol-ok.pdf"
+
+# ---- C22: layer colour=/fill= constants on geom_segment, geom_rect, geom_boxplot ----
+# they parsed and were ignored (segment, boxplot) or lost to a mapped fill (rect)
+printf 'x,y,xend,yend,g\n1,1,2,2,a\n2,2,3,1,b\n' >"$tmpdir/constcol.csv"
+"$CINDERPLOT" "$tmpdir/constcol.csv + aes(x,y,xend=xend,yend=yend) + geom_segment(colour=\"red\")" \
+    -o "$tmpdir/constseg.svg" --size 4x3
+test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/constseg.svg")" -eq 2
+"$CINDERPLOT" "$tmpdir/constcol.csv + aes(x,y,xend=xend,yend=yend,fill=g) + geom_rect(fill=\"red\")" \
+    -o "$tmpdir/constrect.svg" --size 4x3
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/constrect.svg")" -eq 2
+printf 'g,v\na,1\na,2\na,3\na,4\nb,2\nb,3\nb,4\nb,5\n' >"$tmpdir/constbox.csv"
+# fill= paints the two bodies, colour= the chrome (whiskers, outline, median)
+"$CINDERPLOT" "$tmpdir/constbox.csv + aes(g,v) + geom_boxplot(fill=\"red\")" -o "$tmpdir/constboxf.svg" --size 4x3
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/constboxf.svg")" -eq 2
+test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/constboxf.svg")" -eq 0
+"$CINDERPLOT" "$tmpdir/constbox.csv + aes(g,v) + geom_boxplot(colour=\"red\")" -o "$tmpdir/constboxc.svg" --size 4x3
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/constboxc.svg")" -eq 0
+test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/constboxc.svg")" -eq 8
+
+# ---- C24: geom_errorbar() over a fill= mapping draws black, not the fill palette ----
+# painted in the bar's own colour, the half of each whisker inside its bar vanished
+printf 'g,y,lo,hi\nA,3,2,4\nB,5,4,6\nC,4,3,5\n' >"$tmpdir/ebfill.csv"
+"$CINDERPLOT" "$tmpdir/ebfill.csv + aes(g,y,fill=g,ymin=lo,ymax=hi) + geom_col() + geom_errorbar(width=0.3)" \
+    -o "$tmpdir/ebfill.svg" --size 4x3
+test "$(grep -c 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/ebfill.svg")" -eq 9
+
+# ---- C25: dodged boxplots centre a category with fewer groups (dodge2 preserve="total") ----
+# b holds only g1: its box takes the category's full width, twice a's half-boxes
+printf 'x,g,y\na,g1,1\na,g1,2\na,g1,3\na,g2,2\na,g2,3\na,g2,4\nb,g1,3\nb,g1,4\nb,g1,5\n' >"$tmpdir/dodge.csv"
+"$CINDERPLOT" "$tmpdir/dodge.csv + aes(x,y,fill=g) + geom_boxplot()" -o "$tmpdir/dodge.svg" --size 4x3
+grep '<path fill-rule="nonzero" fill="rgb(97.254902%, 46.27451%, 42.745098%)"' "$tmpdir/dodge.svg" \
+    | sed 's/.*d="M \([0-9.]*\) [0-9.]* L \([0-9.]*\) .*/\1 \2/' >"$tmpdir/dodge.w"
+test "$(wc -l <"$tmpdir/dodge.w")" -eq 3           # legend key, a/g1, b/g1
+awk 'NR == 2 { wa = $2 - $1 } NR == 3 { wb = $2 - $1 }
+     END { exit !(wb > 1.9 * wa && wb < 2.1 * wa) }' "$tmpdir/dodge.w"
+
+# ---- C26: bw.nrd0 uses IQR/1.34, as R does ----
+# the wider bandwidth lowers this peak just under the 0.3 break, which drops
+printf 'x\n-0.99\n2.32\n0.78\n-0.59\n-1.17\n0.3\n-0.83\n-1.06\n-7.1\n6.16\n' >"$tmpdir/nrd0.csv"
+"$CINDERPLOT" "$tmpdir/nrd0.csv + aes(x) + geom_density()" -o "$tmpdir/nrd0.pdf" --size 4x3
+pdftotext "$tmpdir/nrd0.pdf" - | grep -q '^0\.2$'
+if pdftotext "$tmpdir/nrd0.pdf" - | grep -q '^0\.3$'; then
+    echo "density bandwidth still uses IQR/1.349" >&2
+    exit 1
+fi
+
+# ==== 2026-09-10 review fixes: parser, CLI, chord ====================================================
+
+# Shared inputs for the parser/CLI cases below.
+printf 'g,lo,hi,m\na,1,3,2\nb,2,5,3\n' >"$tmpdir/eb.csv"
+printf 'x,y,g\n1,2,a\n2,3,b\n3,1,c\n' >"$tmpdir/d.csv"
+printf 'r\ta\tb\nx\t1\t2\ny\t3\t4\n' >"$tmpdir/mat.tsv"
+printf 'from,to,value\nA,X,4\nA,Y,2\nB,X,3\n' >"$tmpdir/ch.csv"
+printf 'a\tb\nc\t3\n' >"$tmpdir/nw.tsv"
+printf '((a:1,b:1):1,c:2);\n' >"$tmpdir/t.nwk"
+
+# ---- C18: canonical aes(x, ymin=, ymax=) + geom_errorbar(), no y --------------
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x=g, ymin=lo, ymax=hi) + geom_errorbar()" \
+    -o "$tmpdir/c18.pdf"
+test -s "$tmpdir/c18.pdf"
+# ... but a second data geom still needs its own y
+if "$CINDERPLOT" "$tmpdir/eb.csv + aes(x=g, ymin=lo, ymax=hi) + geom_errorbar() + geom_point()" \
+        -o "$tmpdir/c18b.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "errorbar + point without y unexpectedly succeeded" >&2; exit 1
+fi
+grep 'need aes(y=)' "$tmpdir/err" >/dev/null
+
+# ---- C19: aesthetic alias collisions are errors, not last-wins ----------------
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x=x, y=y, xmin=g) + geom_point()" \
+        -o "$tmpdir/c19a.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "aes(x=, xmin=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'x= and xmin= both map' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x=factor(g), y=y, colour=g, fill=g) + geom_boxplot()" \
+        -o "$tmpdir/c19b.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "aes(colour=, fill=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'colour= and fill= both map' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, yend=x, ymax=y) + geom_point()" \
+        -o "$tmpdir/c19c.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "aes(yend=, ymax=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'yend= and ymax= both map' "$tmpdir/err" >/dev/null
+# a positional after a named x= fills y (R's matching), so this must render
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x=factor(g), y) + geom_col()" --size 4x3 -o "$tmpdir/c19d.png"
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x=factor(g), y=y) + geom_col()" --size 4x3 -o "$tmpdir/c19e.png"
+cmp -s "$tmpdir/c19d.png" "$tmpdir/c19e.png"
+
+# ---- C20: guides() is per aesthetic ------------------------------------------
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=g, size=y) + geom_point() + guides(size=\"none\")" \
+    --size 4x3 -o "$tmpdir/c20a.png"
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=g, size=y) + geom_point() + guides(colour=\"none\", size=\"none\")" \
+    --size 4x3 -o "$tmpdir/c20b.png"
+if cmp -s "$tmpdir/c20a.png" "$tmpdir/c20b.png"; then
+    echo "guides(size=\"none\") dropped the colour legend too" >&2; exit 1
+fi
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=g, size=y) + geom_point() + guides(size=guide_legend(reverse=TRUE))" \
+        -o "$tmpdir/c20c.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "guides(size=guide_legend()) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'apply to the colour/fill legend only' "$tmpdir/err" >/dev/null
+
+# ---- C23: geom_hline()/geom_vline() need an intercept -------------------------
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + geom_hline()" \
+        -o "$tmpdir/c23a.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "geom_hline() without an intercept unexpectedly succeeded" >&2; exit 1
+fi
+grep 'geom_hline() needs yintercept=' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + geom_vline(xintercept=)" \
+        -o "$tmpdir/c23b.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "geom_vline(xintercept=) with no value unexpectedly succeeded" >&2; exit 1
+fi
+grep 'xintercept= needs a number' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + geom_hline(yintercept=c(1,2))" \
+        -o "$tmpdir/c23c.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "geom_hline(yintercept=c()) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'takes one value; repeat the layer' "$tmpdir/err" >/dev/null
+
+# ---- C27: the tree geoms are refused beside heatmap/track verbs ---------------
+if "$CINDERPLOT" "$tmpdir/mat.tsv + heatmap() + geom_tree()" \
+        -o "$tmpdir/c27a.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "heatmap() + geom_tree() unexpectedly succeeded" >&2; exit 1
+fi
+grep 'geom_tree() is its own mode' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/mat.tsv + heatmap() + coord_polar() + geom_tiplab()" \
+        -o "$tmpdir/c27b.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "heatmap() + coord_polar() + geom_tiplab() unexpectedly succeeded" >&2; exit 1
+fi
+grep 'tree geoms' "$tmpdir/err" >/dev/null
+
+# ---- C28: scale_colour_*() aliases the fill scale in heatmap mode -------------
+"$CINDERPLOT" "$tmpdir/mat.tsv + heatmap(cluster=none)" --size 3x3 -o "$tmpdir/c28a.png"
+"$CINDERPLOT" "$tmpdir/mat.tsv + heatmap(cluster=none) + scale_colour_gradient(low=\"white\", high=\"red\")" \
+    --size 3x3 -o "$tmpdir/c28b.png"
+if cmp -s "$tmpdir/c28a.png" "$tmpdir/c28b.png"; then
+    echo "scale_colour_gradient() was ignored on a heatmap" >&2; exit 1
+fi
+
+# ---- C29: chord()/tree mode refuse the grammar-only verbs ---------------------
+for bad in "facet_wrap(~from)" "coord_flip()" "theme_bw()" "labs(x=\"a\")" \
+           "order=c(\"A\",\"B\",\"X\",\"Y\"), bipartite=TRUE"; do
+    case "$bad" in
+        order*) spec="$tmpdir/ch.csv + chord($bad)" ;;
+        *)      spec="$tmpdir/ch.csv + chord() + $bad" ;;
+    esac
+    if "$CINDERPLOT" "$spec" -o "$tmpdir/c29.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+        echo "chord with $bad unexpectedly succeeded" >&2; exit 1
+    fi
+done
+grep 'order= and bipartite=TRUE' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/t.nwk + geom_tree() + theme_bw()" \
+        -o "$tmpdir/c29t.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "geom_tree() + theme_bw() unexpectedly succeeded" >&2; exit 1
+fi
+grep 'no effect on a tree' "$tmpdir/err" >/dev/null
+
+# ---- C30: options are validated per object -----------------------------------
+if "$CINDERPLOT" "$tmpdir/mat.tsv + heatmap(name=\"m\") + legend(right_of(\"m\"), cluster=both)" \
+        -o "$tmpdir/c30a.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "legend(cluster=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'not valid for legend()' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "region(\"chr1:1-100\") + coverage(\"$tmpdir/nw.tsv\", cluster=samples)" \
+        -o "$tmpdir/c30b.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "coverage(cluster=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'not valid for coverage()' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=y) + geom_point() + scale_colour_viridis(low=\"red\", high=\"blue\")" \
+        -o "$tmpdir/c30c.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "scale_colour_viridis(low=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'low= is not valid for scale_colour_viridis()' "$tmpdir/err" >/dev/null
+
+# ---- D8: manual after brewer blames the manual list; ggplot(aes_*.csv) -------
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=g) + geom_point() + scale_colour_brewer(palette=\"Set1\") + scale_colour_manual(values=c(\"red\"))" \
+        -o "$tmpdir/d8a.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "1-colour manual on 3 levels unexpectedly succeeded" >&2; exit 1
+fi
+grep 'scale_\*_manual gives 1 colours' "$tmpdir/err" >/dev/null
+cp "$tmpdir/d.csv" "$tmpdir/aes_d.csv"
+"$CINDERPLOT" "ggplot($tmpdir/aes_d.csv, aes(x, y)) + geom_point()" -o "$tmpdir/d8b.pdf"
+test -s "$tmpdir/d8b.pdf"
+
+# ---- D4: backtick column names, UTF-8 names, a quoted data path with a space ---
+beta=$(printf '\316\262')
+printf 'my col,b-val,%s\n1,2,a\n2,3,b\n' "$beta" >"$tmpdir/sp.csv"
+"$CINDERPLOT" "$tmpdir/sp.csv + aes(\`my col\`, \`b-val\`, colour=$beta) + geom_point() + facet_wrap(~\`b-val\`)" \
+    -o "$tmpdir/d4a.pdf"
+test -s "$tmpdir/d4a.pdf"
+cp "$tmpdir/d.csv" "$tmpdir/my data.csv"
+"$CINDERPLOT" "\"$tmpdir/my data.csv\" + aes(x, y) + geom_point()" -o "$tmpdir/d4b.pdf"
+test -s "$tmpdir/d4b.pdf"
+
+# ---- D5: xlim()/ylim() validated at parse time ---------------------------------
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + xlim(300, 50)" \
+        -o "$tmpdir/d5a.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "xlim(300, 50) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'xlim(): lo must be < hi (got 300, 50)' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + ylim(5)" \
+        -o "$tmpdir/d5b.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "ylim(5) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'ylim() expects two numbers' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + scale_x_continuous(limits=c(NA, 3))" \
+        -o "$tmpdir/d5c.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "limits=c(NA, 3) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'one-sided limits (NA) are not implemented' "$tmpdir/err" >/dev/null
+# R's xlim(c(lo, hi)) spelling reads the same as xlim(lo, hi)
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + xlim(c(0, 4))" --size 4x3 -o "$tmpdir/d5d.png"
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + xlim(0, 4)" --size 4x3 -o "$tmpdir/d5e.png"
+cmp -s "$tmpdir/d5d.png" "$tmpdir/d5e.png"
+
+# ---- D6: theme(legend.position="none") works; other positions point at guides()
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=g) + geom_point() + theme(legend.position=\"none\")" \
+    --size 4x3 -o "$tmpdir/d6a.png"
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=g) + geom_point() + guides(colour=\"none\")" \
+    --size 4x3 -o "$tmpdir/d6b.png"
+cmp -s "$tmpdir/d6a.png" "$tmpdir/d6b.png"
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=g) + geom_point() + theme(legend.position=\"bottom\")" \
+        -o "$tmpdir/d6c.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "legend.position=\"bottom\" unexpectedly succeeded" >&2; exit 1
+fi
+grep 'guides(colour="none")' "$tmpdir/err" >/dev/null
+
+# ---- D7: R idioms get a targeted message; single quotes; ggtitle(subtitle=) ---
+chk() {   # chk <spec-tail> <expected stderr fragment>
+    if "$CINDERPLOT" "$tmpdir/d.csv + $1" -o "$tmpdir/d7.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+        echo "'$1' unexpectedly succeeded" >&2; exit 1
+    fi
+    grep -- "$2" "$tmpdir/err" >/dev/null || { echo "'$1': message lacks '$2':" >&2; cat "$tmpdir/err" >&2; exit 1; }
+}
+chk "aes(as.factor(g), y) + geom_boxplot()" 'use factor(col)'
+chk "aes(reorder(g, y), y) + geom_boxplot()" 'levels=c('
+chk "aes(log10(x), y) + geom_point()" 'scale_x_log10()'
+chk "aes(x/y, y) + geom_point()" 'arithmetic'
+chk "aes(x, y) + geom_point(aes(colour=g))" 'top-level aes()'
+chk "aes(x, y) + geom_point() + geom_hline(aes(yintercept=2))" 'literal intercept'
+chk "aes(x, y) + geom_point() + facet_grid(g~x)" 'facet_grid() is not implemented'
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + labs(title='single') + ggtitle(\"T\", subtitle=\"Sub\")" \
+    -o "$tmpdir/d7b.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext "$tmpdir/d7b.pdf" - | grep 'Sub' >/dev/null
+fi
+
+# ---- D9: the menus name every implemented verb / option -----------------------
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + nope()" -o "$tmpdir/d9.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "nope() unexpectedly succeeded" >&2; exit 1
+fi
+for v in 'chord()' 'smooth' 'annotate()' 'coord_flip/polar' 'brewer' 'ideogram()' 'geom_tree' 'ggplot()'; do
+    grep -F -- "$v" "$tmpdir/err" >/dev/null || { echo "menu lacks $v" >&2; exit 1; }
+done
+if "$CINDERPLOT" "region(\"chr1:1-100\") + matrix(\"$tmpdir/nw.tsv\", nope=1)" -o "$tmpdir/d9b.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "matrix(nope=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'colnames=' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/mat.tsv + heatmap(nope=1)" -o "$tmpdir/d9c.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "heatmap(nope=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'title=' "$tmpdir/err" >/dev/null
+# --help: five modes with a chord row, the fuller geom line, -r documented
+"$CINDERPLOT" --help >"$tmpdir/help"
+grep 'FIVE MODES' "$tmpdir/help" >/dev/null
+grep 'chord(' "$tmpdir/help" >/dev/null
+grep 'errorbar' "$tmpdir/help" >/dev/null
+grep -- '-r, --region' "$tmpdir/help" >/dev/null
+
+# ---- geom_histogram() takes the generic layer args; geom_line(size=) says why -
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x) + geom_histogram(bins=3, fill=\"red\", alpha=0.5, colour=\"black\")" \
+    -o "$tmpdir/hist.pdf"
+test -s "$tmpdir/hist.pdf"
+chk "aes(x) + geom_histogram(binwidth=1)" 'binwidth=) is not implemented'
+chk "aes(x, y) + geom_line(size=2)" 'line width on geom_line()'
+chk "aes(x, y) + geom_line(linewidth=2)" 'line width on geom_line()'
+
+# ---- D1: output naming ---------------------------------------------------------
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point()" -o "$tmpdir/fig.jpg" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "-o fig.jpg unexpectedly succeeded" >&2; exit 1
+fi
+grep 'must end in .pdf, .svg or .png (got' "$tmpdir/err" >/dev/null
+test ! -e "$tmpdir/fig.jpg"
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point()" -o - >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "-o - unexpectedly succeeded" >&2; exit 1
+fi
+grep '/dev/stdout' "$tmpdir/err" >/dev/null
+cp "$tmpdir/d.csv" "$tmpdir/keep.pdf"
+if "$CINDERPLOT" "$tmpdir/keep.pdf + aes(x, y) + geom_point()" -o "$tmpdir/keep.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "output == data unexpectedly succeeded" >&2; exit 1
+fi
+grep 'is the data file' "$tmpdir/err" >/dev/null
+cmp -s "$tmpdir/d.csv" "$tmpdir/keep.pdf"
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point()" -o "$tmpdir/nodir/fig.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "output in a missing directory unexpectedly succeeded" >&2; exit 1
+fi
+grep "nodir/fig.pdf" "$tmpdir/err" >/dev/null
+
+# ---- D11: quick-mode flags vs a DSL expression; --log; -x alone; --size=WxH ----
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point()" -c g -o "$tmpdir/d11a.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "DSL + -c unexpectedly succeeded" >&2; exit 1
+fi
+grep 'cannot be combined with a DSL expression' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/d.csv" -x x -y y --log z -o "$tmpdir/d11b.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "--log z unexpectedly succeeded" >&2; exit 1
+fi
+grep -- '--log must be x, y or xy' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/d.csv" -x x -o "$tmpdir/d11c.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "-x without -y unexpectedly succeeded" >&2; exit 1
+fi
+grep -- '-x without -y' "$tmpdir/err" >/dev/null
+"$CINDERPLOT" "$tmpdir/d.csv" -x x -y y --size=3x2 --dpi=50 -o "$tmpdir/d11d.png"
+"$CINDERPLOT" "$tmpdir/d.csv" -x x -y y --size 3x2 --dpi 50 -o "$tmpdir/d11e.png"
+cmp -s "$tmpdir/d11d.png" "$tmpdir/d11e.png"
+if "$CINDERPLOT" "$tmpdir/d.csv" -x x -y y a b c d e f g h -o "$tmpdir/d11f.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "nine positionals unexpectedly succeeded" >&2; exit 1
+fi
+grep 'too many arguments' "$tmpdir/err" >/dev/null
+
+# ---- D12: one boolean spelling everywhere; rownames=on; heatmap("file") -------
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point(raster=true)" -o "$tmpdir/d12a.pdf"
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point(raster=1)" -o "$tmpdir/d12b.pdf"
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + coord_cartesian(expand=F)" -o "$tmpdir/d12c.pdf"
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_smooth(se=false)" -o "$tmpdir/d12d.pdf"
+"$CINDERPLOT" "$tmpdir/ch.csv + chord(bipartite=T)" -o "$tmpdir/d12e.pdf"
+test -s "$tmpdir/d12e.pdf"
+"$CINDERPLOT" "$tmpdir/mat.tsv + heatmap(rownames=on, cluster=\"both\")" --size 3x3 -o "$tmpdir/d12f.png"
+"$CINDERPLOT" "$tmpdir/mat.tsv + heatmap(rownames=right, cluster=both)" --size 3x3 -o "$tmpdir/d12g.png"
+cmp -s "$tmpdir/d12f.png" "$tmpdir/d12g.png"
+if "$CINDERPLOT" "$tmpdir/mat.tsv + heatmap($tmpdir/mat.tsv)" -o "$tmpdir/d12h.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "heatmap(file) positional unexpectedly succeeded" >&2; exit 1
+fi
+grep 'data=' "$tmpdir/err" >/dev/null
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample_name\n' >"$tmpdir/mtx.tsv"
+printf 'chr1\t110\t111\tp1\t0.1\ts1\nchr1\t110\t111\tp1\t0.2\ts2\n' >>"$tmpdir/mtx.tsv"
+"$CINDERPLOT" "region(\"chr1:100-200\") + matrix(\"$tmpdir/mtx.tsv\", rownames=left)" -o "$tmpdir/d12i.pdf"
+test -s "$tmpdir/d12i.pdf"
+
+# ---- D15: fill= on a stroke geom / colour= on an area geom warn on stderr -------
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, fill=g) + geom_point()" -o "$tmpdir/d15a.pdf" 2>"$tmpdir/err"
+grep 'aes(fill=) on geom_point() is drawn as colour=' "$tmpdir/err" >/dev/null
+"$CINDERPLOT" "$tmpdir/d.csv + aes(x=factor(g), y=y, colour=g) + geom_col()" -o "$tmpdir/d15b.pdf" 2>"$tmpdir/err"
+grep 'aes(colour=) on geom_col() is drawn as fill=' "$tmpdir/err" >/dev/null
+
+# ---- D16: chord(gap=0) is zero, and the gap error prints the effective value ---
+"$CINDERPLOT" "$tmpdir/ch.csv + chord(gap=0)" --size 4x4 -o "$tmpdir/d16a.png"
+"$CINDERPLOT" "$tmpdir/ch.csv + chord()" --size 4x4 -o "$tmpdir/d16b.png"
+if cmp -s "$tmpdir/d16a.png" "$tmpdir/d16b.png"; then
+    echo "chord(gap=0) was treated as the default gap" >&2; exit 1
+fi
+if "$CINDERPLOT" "$tmpdir/ch.csv + chord(gap=89)" -o "$tmpdir/d16c.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "chord(gap=89) unexpectedly succeeded" >&2; exit 1
+fi
+grep '4 x 89 = 356' "$tmpdir/err" >/dev/null
+
+# ---- B4: a repeated name in chord(order=) is refused --------------------------
+if "$CINDERPLOT" "$tmpdir/ch.csv + chord(order=c(\"A\",\"A\",\"B\",\"X\"))" -o "$tmpdir/b4.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "duplicate chord order unexpectedly succeeded" >&2; exit 1
+fi
+grep 'listed twice' "$tmpdir/err" >/dev/null
+
+# ---- D10 (chord): empty file, and a numeric from/to column is named ------------
+printf 'from,to,value\n' >"$tmpdir/empty.csv"
+if "$CINDERPLOT" "$tmpdir/empty.csv + chord()" -o "$tmpdir/d10a.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "chord on an empty file unexpectedly succeeded" >&2; exit 1
+fi
+grep 'has no rows' "$tmpdir/err" >/dev/null
+printf 'a,b,c\n1,2,3\n2,3,4\n' >"$tmpdir/num.csv"
+if "$CINDERPLOT" "$tmpdir/num.csv + chord()" -o "$tmpdir/d10b.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "chord on numeric from/to unexpectedly succeeded" >&2; exit 1
+fi
+grep 'from column `a`' "$tmpdir/err" >/dev/null
+
+# ---- D20 (chord): labels never run off the canvas ------------------------------
+printf 'from,to,value\nAlpha_long_name_here,Beta_long_name_here,4\nGamma_long_name_here,Delta_long_name_here,2\n' \
+    >"$tmpdir/long.csv"
+if "$CINDERPLOT" "$tmpdir/long.csv + chord()" --size 2x2 -o "$tmpdir/d20a.pdf" \
+        >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "chord with labels wider than the canvas unexpectedly succeeded" >&2; exit 1
+fi
+grep 'canvas too small for the sector labels' "$tmpdir/err" >/dev/null
+# at 4x4 the labels shrink to fit: no dark pixel on the outermost columns/rows
+"$CINDERPLOT" "$tmpdir/long.csv + chord()" --size 4x4 -o "$tmpdir/d20b.png"
+python3 - "$tmpdir/d20b.png" <<'PY'
+import sys, zlib, struct
+d = open(sys.argv[1], 'rb').read()
+w, h = struct.unpack('>II', d[16:24])
+idat = b''; p = 8
+while p < len(d):
+    n = struct.unpack('>I', d[p:p+4])[0]; t = d[p+4:p+8]
+    if t == b'IDAT': idat += d[p+8:p+8+n]
+    p += 12 + n
+raw = zlib.decompress(idat)
+bpp = {2: 3, 6: 4}[d[25]]; stride = w * bpp + 1
+prev = bytearray(w * bpp); rows = []
+for y in range(h):
+    f = raw[y*stride]; line = bytearray(raw[y*stride+1:(y+1)*stride])
+    for i in range(w * bpp):
+        a = line[i-bpp] if i >= bpp else 0; b = prev[i]; c = prev[i-bpp] if i >= bpp else 0
+        if f == 1: line[i] = (line[i] + a) & 255
+        elif f == 2: line[i] = (line[i] + b) & 255
+        elif f == 3: line[i] = (line[i] + (a + b) // 2) & 255
+        elif f == 4:
+            pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+            line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+    rows.append(bytes(line)); prev = line
+def dark(y, x):
+    px = rows[y][x*bpp:x*bpp+3]
+    return sum(px) < 600
+edge = sum(dark(y, x) for y in range(h) for x in (0, 1, w-2, w-1)) \
+     + sum(dark(y, x) for x in range(w) for y in (0, 1, h-2, h-1))
+sys.exit(1 if edge else 0)
+PY
+
+# ---- two grammar-mode annotation() bands stack (the 2nd used to be refused) ----
+printf 'g,m\na,1\nb,2\n' >"$tmpdir/band2.csv"
+printf 'g\tsex\tbatch\na\tM\tb1\nb\tF\tb2\n' >"$tmpdir/band2.tsv"
+"$CINDERPLOT" "$tmpdir/band2.csv + aes(x=g, y=m) + geom_col() + annotation(\"$tmpdir/band2.tsv\", column=\"sex\") + annotation(\"$tmpdir/band2.tsv\", column=\"batch\")" \
+    -o "$tmpdir/band2.pdf"
+test -s "$tmpdir/band2.pdf"
+pdftotext "$tmpdir/band2.pdf" - | grep -q batch
+# an explicit placement is still a heatmap-mode error
+if "$CINDERPLOT" "$tmpdir/band2.csv + aes(x=g, y=m) + geom_col() + annotation(\"$tmpdir/band2.tsv\", column=\"sex\", left_of(\"m\"))" \
+        -o "$tmpdir/band3.pdf" 2>"$tmpdir/err"; then
+    echo "placed grammar-mode annotation unexpectedly succeeded" >&2; exit 1
+fi
+grep 'placements (left_of/right_of/...) are heatmap-mode' "$tmpdir/err" >/dev/null
+
+# ---- highlight() on a matrix() track: row + genomic span, and the file form ----
+# A tiny two-sample matrix over one window; the boxes are addressed by sample
+# name and coordinates, so the assertions can check which probe columns they
+# cover rather than only that something was drawn.
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample\n' >"$tmpdir/hlm.tsv"
+i=0
+while [ "$i" -lt 10 ]; do
+    p=$((1000 + i * 100))
+    printf 'chr1\t%s\t%s\tp%s\t0.2\tS1\n' "$p" "$((p + 2))" "$i" >>"$tmpdir/hlm.tsv"
+    printf 'chr1\t%s\t%s\tp%s\t0.8\tS2\n' "$p" "$((p + 2))" "$i" >>"$tmpdir/hlm.tsv"
+    i=$((i + 1))
+done
+"$CINDERPLOT" "region(\"chr1:1000-2000\") + matrix(\"$tmpdir/hlm.tsv\", name=\"m\", cluster=none, colnames=off) + highlight(name=\"m\", row=\"S2\", region=\"chr1:1200-1500\", colour=\"#d73027\")" \
+    -o "$tmpdir/hlt.svg"
+test -s "$tmpdir/hlt.svg"
+grep -q 'stroke="rgb(84.313725%, 18.823529%, 15.294118%)"' "$tmpdir/hlt.svg"
+
+# the file form: one box per line, colour/label/linetype per box
+printf 'row\tchrom\tbeg\tend\tcolour\tlabel\tlinetype\n' >"$tmpdir/hlbox.tsv"
+printf 'S1\tchr1\t1000\t1300\t#4575b4\tF\tsolid\n' >>"$tmpdir/hlbox.tsv"
+printf 'S2\tchr1\t1600\t1900\t#e08214\tE\tdashed\n' >>"$tmpdir/hlbox.tsv"
+"$CINDERPLOT" "region(\"chr1:1000-2000\") + matrix(\"$tmpdir/hlm.tsv\", name=\"m\", cluster=none, colnames=off) + highlight(\"$tmpdir/hlbox.tsv\", name=\"m\")" \
+    -o "$tmpdir/hlf.svg"
+grep -q 'stroke="rgb(27.058824%, 45.882353%, 70.588235%)"' "$tmpdir/hlf.svg"
+grep -q 'stroke="rgb(87.843137%, 50.980392%, 7.843137%)"' "$tmpdir/hlf.svg"
+
+# a span covering no probe column warns, it does not fail the render
+"$CINDERPLOT" "region(\"chr1:1000-2000\") + matrix(\"$tmpdir/hlm.tsv\", name=\"m\", cluster=none, colnames=off) + highlight(name=\"m\", row=\"S1\", region=\"chr9:1-2\")" \
+    -o "$tmpdir/hlw.pdf" 2>"$tmpdir/err"
+test -s "$tmpdir/hlw.pdf"
+grep 'outside every panel' "$tmpdir/err" >/dev/null
+
+# an unknown sample row is an error naming the row
+if "$CINDERPLOT" "region(\"chr1:1000-2000\") + matrix(\"$tmpdir/hlm.tsv\", name=\"m\", cluster=none) + highlight(name=\"m\", row=\"nope\", region=\"chr1:1200-1500\")" \
+        -o "$tmpdir/hle.pdf" 2>"$tmpdir/err"; then
+    echo "highlight() with an unknown row unexpectedly succeeded" >&2; exit 1
+fi
+grep 'not a sample row' "$tmpdir/err" >/dev/null
+
+# each form belongs to its own mode
+if "$CINDERPLOT" "region(\"chr1:1000-2000\") + matrix(\"$tmpdir/hlm.tsv\", cluster=none) + highlight(\"S1\", \"p0\")" \
+        -o "$tmpdir/hle.pdf" 2>"$tmpdir/err"; then
+    echo "heatmap-form highlight() in track mode unexpectedly succeeded" >&2; exit 1
+fi
+grep 'boxes a heatmap() cell' "$tmpdir/err" >/dev/null
+printf 'rn\ta\tb\ns1\t1\t2\ns2\t3\t4\n' >"$tmpdir/hlhm.tsv"
+if "$CINDERPLOT" "$tmpdir/hlhm.tsv + heatmap(name=\"m\") + highlight(name=\"m\", row=\"s1\", region=\"chr1:1-2\")" \
+        -o "$tmpdir/hle.pdf" 2>"$tmpdir/err"; then
+    echo "track-form highlight() in heatmap mode unexpectedly succeeded" >&2; exit 1
+fi
+grep 'need track mode' "$tmpdir/err" >/dev/null
+
+# the file needs its four required columns
+printf 'a\tb\n1\t2\n' >"$tmpdir/hlbad.tsv"
+if "$CINDERPLOT" "region(\"chr1:1000-2000\") + matrix(\"$tmpdir/hlm.tsv\", name=\"m\", cluster=none) + highlight(\"$tmpdir/hlbad.tsv\", name=\"m\")" \
+        -o "$tmpdir/hle.pdf" 2>"$tmpdir/err"; then
+    echo "highlight() with a malformed box file unexpectedly succeeded" >&2; exit 1
+fi
+grep 'needs columns row, chrom, beg, end' "$tmpdir/err" >/dev/null
 
 echo "all tests passed"
