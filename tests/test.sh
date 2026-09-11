@@ -3079,4 +3079,36 @@ if "$CINDERPLOT" "region(\"chr1:1000-2000\") + matrix(\"$tmpdir/hlm.tsv\", name=
 fi
 grep 'needs columns row, chrom, beg, end' "$tmpdir/err" >/dev/null
 
+# ---- the size legend, and heatmap annotation run labels ------------------
+# Two code paths that nothing reached: build_size_legend() drew nothing in any
+# test because the only aes(size=) case suppressed it with guides(size="none"),
+# and spread_labels() lays out an annotation's run labels with leader lines.
+printf 'x,y,w\n1,2,3\n2,4,9\n3,1,5\n4,3,7\n' >"$tmpdir/szleg.csv"
+"$CINDERPLOT" "$tmpdir/szleg.csv + aes(x,y,size=w) + geom_point()" \
+    -o "$tmpdir/szleg.pdf" --size 5x3
+test -s "$tmpdir/szleg.pdf"
+# the legend is titled by the mapped column and lists representative breaks
+pdftotext "$tmpdir/szleg.pdf" - | grep -q '^w$'
+
+printf 'rn,a,b\nr1,1,2\nr2,3,4\nr3,5,6\nr4,7,8\n' >"$tmpdir/annlab.csv"
+printf 'rn,grp\nr1,alpha\nr2,alpha\nr3,beta\nr4,beta\n' >"$tmpdir/annlab-ann.csv"
+"$CINDERPLOT" "$tmpdir/annlab.csv + heatmap(name=\"m\", cluster=none)
+     + annotation(\"$tmpdir/annlab-ann.csv\", right_of(\"m\"), labels=on)" \
+    -o "$tmpdir/annlab.pdf" --size 4x3
+# one label per contiguous run, not one per row
+test "$(pdftotext "$tmpdir/annlab.pdf" - | grep -c 'alpha\|beta')" -eq 2
+
+# ---- parser errors that had no test ----------------------------------------
+# The design promise is that anything unsupported fails with a message naming
+# the alternative, which makes these messages the interface. Half of them had
+# never been triggered by a test, so the promise was unchecked.
+chk 'aes(`unclosed, y) + geom_point()' 'backtick'
+chk 'aes(x, y, levels=c(1) + geom_point()' 'levels='
+chk 'aes(sqrt(x), y) + geom_point()' 'not implemented'
+chk 'aes("x", y) + geom_point()' 'not a string'
+chk 'aes(factor(g, labels=c("a"))) + geom_point()' 'levels=c(...)'
+chk 'aes(x, y, z, g, b) + geom_point()' 'positional'
+chk 'labs(title=3) + aes(x,y) + geom_point()' 'quoted string or NULL'
+chk 'heatmap(name="m") + annotation("'"$tmpdir"'/annlab-ann.csv", right_of("m", bogus=2))' 'placement option'
+
 echo "all tests passed"
