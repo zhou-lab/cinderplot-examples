@@ -3111,4 +3111,23 @@ chk 'aes(x, y, z, g, b) + geom_point()' 'positional'
 chk 'labs(title=3) + aes(x,y) + geom_point()' 'quoted string or NULL'
 chk 'heatmap(name="m") + annotation("'"$tmpdir"'/annlab-ann.csv", right_of("m", bogus=2))' 'placement option'
 
+# ---- a tabix query that spans more than one index chunk --------------------
+# Only genes() uses the .tbi (the other readers inflate the whole file). A
+# narrow query resolves to a single chunk, so the sort-and-merge path -- and
+# chunk_cmp(), which qsort never calls for fewer than two elements -- went
+# unexercised by every other case. tracks/genes_multichunk.bed.gz is sized to
+# span several 64KB BGZF blocks so a wide window returns several chunks.
+"$CINDERPLOT" "region(\"chr1:1-8005000\") + genes(\"$here/tracks/genes_multichunk.bed.gz\")" \
+    -o "$tmpdir/multichunk.pdf" --size 8x3
+test -s "$tmpdir/multichunk.pdf"
+# the whole window: gene models from both ends of the file must be drawn
+pdftotext "$tmpdir/multichunk.pdf" - >"$tmpdir/multichunk.txt"
+grep -q 'gene00000' "$tmpdir/multichunk.txt"
+grep -q 'gene03999' "$tmpdir/multichunk.txt"
+# and a narrow window inside it returns only its own records
+"$CINDERPLOT" "region(\"chr1:4000000-4020000\") + genes(\"$here/tracks/genes_multichunk.bed.gz\")" \
+    -o "$tmpdir/onechunk.pdf" --size 8x3
+pdftotext "$tmpdir/onechunk.pdf" - | grep -q 'gene02000'
+pdftotext "$tmpdir/onechunk.pdf" - | grep -qv 'gene00000'
+
 echo "all tests passed"
