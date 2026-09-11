@@ -3130,4 +3130,83 @@ grep -q 'gene03999' "$tmpdir/multichunk.txt"
 pdftotext "$tmpdir/onechunk.pdf" - | grep -q 'gene02000'
 pdftotext "$tmpdir/onechunk.pdf" - | grep -qv 'gene00000'
 
+# ---- parser errors: the menu the design promises ---------------------------
+# Every unsupported verb, option or value is meant to fail with a message that
+# names the alternative, which makes these messages the interface rather than
+# decoration. Coverage showed roughly half had never been triggered by a test,
+# so the promise was unchecked. chkx takes a whole spec; chk prefixes d.csv.
+chkx() {   # chkx <full spec> <expected stderr fragment>
+    if "$CINDERPLOT" "$1" -o "$tmpdir/pe.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+        echo "'$1' unexpectedly succeeded" >&2; exit 1
+    fi
+    grep -- "$2" "$tmpdir/err" >/dev/null || { echo "'$1': message lacks '$2':" >&2; cat "$tmpdir/err" >&2; exit 1; }
+}
+
+# aes() and the layer arguments
+chk 'geom_point()' 'aes() must map x'
+chk 'aes(x, y, bogus=g) + geom_point()' 'is not implemented'
+chk 'aes(x, y) + geom_text()' 'need aes(label=...)'
+chk 'aes(x, y) + geom_vline()' 'needs xintercept='
+chk 'aes(x, y) + geom_point(alpha=0)' 'alpha= must be in (0, 1]'
+chk 'aes(x, y) + geom_point(raster=maybe)' 'expects TRUE or FALSE'
+chk 'aes(x, y) + geom_point(linetype="wavy")' 'linetype='
+chk 'aes(x) + geom_histogram(bins=0)' 'whole number 1..10000'
+chk 'aes(x) + geom_density(bw=0)' 'must be > 0'
+chk 'aes(x) + geom_density(adjust=-1)' 'must be > 0'
+chk 'aes(x, y) + geom_errorbar(width=0)' 'expects a number > 0'
+chk 'aes(x, y) + geom_smooth(se=TRUE)' 'not implemented'
+chk 'aes(x, y=y) + geom_histogram()' 'do not map y'
+chk 'aes(x) + geom_histogram() + geom_point()' 'cannot be combined'
+chk 'aes(x, y) + geom_point(colour="not-a-colour")' 'bad colour'
+chk 'aes(x, y)' 'no geom given'
+
+# scales
+chk 'aes(x, y) + geom_point() + scale_x_continuous(bogus=1)' 'option `bogus` not implemented'
+chk 'aes(x, y) + geom_point() + scale_x_continuous(breaks=1)' 'expects c(a, b, ...)'
+chk 'aes(x, y) + geom_point() + scale_x_continuous(limits=c(1))' 'limits= expects'
+chk 'aes(x, y, colour=g) + geom_point() + scale_colour_manual(bogus=1)' 'only values='
+chk 'aes(x, y, colour=g) + geom_point() + scale_colour_manual(values=1)' 'values= expects'
+chk 'aes(x, y, colour=g) + geom_point() + scale_colour_brewer(palette="Nope")' 'unknown ColorBrewer palette'
+chk 'aes(x, y, colour=g) + geom_point() + scale_colour_brewer(bogus=1)' 'option `bogus` not implemented'
+chk 'aes(x, y, colour=x) + geom_point() + scale_colour_distiller(bogus=1)' 'option `bogus` not implemented'
+chk 'aes(x, y, colour=x) + geom_point() + scale_colour_viridis(mid="red")' 'the palette is fixed'
+chk 'aes(x, y, colour=x) + geom_point() + scale_colour_viridis(midpoint=1)' 'the palette is fixed'
+chk 'aes(x, y) + geom_point() + scale_x_discrete(bogus=1)' 'option `bogus` not implemented'
+chk 'aes(x, y) + geom_point() + scale_x_continuous(expand=c(-1, 0))' 'must be >= 0'
+
+# facets, coords, themes
+chk 'aes(x, y) + geom_point() + facet_wrap(~g, bogus=1)' 'option `bogus` not implemented'
+chk 'aes(x, y) + geom_point() + facet_wrap(~g, levels=1)' 'levels= expects'
+chk 'aes(x, y) + geom_point() + coord_cartesian(bogus=1)' 'coord_cartesian option'
+chk 'aes(x, y) + geom_point() + coord_cartesian(expand=TRUE)' 'only expand=FALSE'
+chk 'aes(factor(g), y) + geom_line() + coord_polar(bogus=1)' 'coord_polar option'
+chk 'aes(factor(g), y) + geom_line() + coord_polar() + coord_flip()' 'contradict each other'
+chk 'aes(x, y) + geom_point() + theme_nope()' 'is not implemented; supported: theme_gray'
+chk 'aes(x, y) + geom_point() + theme(bogus="x")' 'the presets (theme_bw() etc.'
+chk 'aes(x, y) + geom_point() + theme(legend.position="inside", legend.position.inside=c(2, 2))' 'npc'
+chk 'aes(x, y) + geom_point() + labs(bogus="x")' 'labs('
+chk 'aes(x, y) + geom_point() + annotate("text", x=1, y=1, label="a", bogus=1)' 'annotate() option'
+chk 'aes(x, y) + geom_point() + annotate("text", x=1, y=1, label="a", colour="nope")' 'annotate() colour invalid'
+chk 'aes(x, y) + geom_point() + annotate("text", x=1, y=1, label="a", vjust=0.3)' 'vjust= takes'
+chk 'library(ggplot2) + aes(x, y) + geom_point()' 'R session plumbing'
+
+# heatmap, tracks, trees, chord
+chkx "$tmpdir/mat.tsv + heatmap(cluster=maybe)" 'cluster='
+chkx "$tmpdir/mat.tsv + heatmap(rownames=sideways)" 'rownames='
+chkx "$tmpdir/mat.tsv + heatmap(colnames=sideways)" 'colnames='
+chkx "$tmpdir/mat.tsv + heatmap(name=\"m\") + legend(right_of(\"m\"), bogus=1)" 'not implemented'
+chkx "$tmpdir/mat.tsv + annotation(\"$tmpdir/mat.tsv\", top_of(\"m\"))" 'must be a heatmap'
+chkx "$tmpdir/mat.tsv + heatmap(name=\"m\") + scale_fill_manual(values=c(\"red\"))" 'not supported in heatmap mode'
+chkx "$tmpdir/mat.tsv + heatmap() + theme_bw()" 'presets have no effect in heatmap mode'
+chkx "$tmpdir/mat.tsv + heatmap() + coord_flip()" 'do not apply to heatmap mode'
+chkx "region(\"chr1:1-100\") + coverage(\"$here/tracks/atac.bedgraph\") + theme_bw()" 'presets have no effect on the track browser'
+chkx "region(\"chr1:1-100\") + coverage(\"$here/tracks/atac.bedgraph\") + coord_flip()" 'do not apply to the track browser'
+chkx "region(\"chr1:1-100\") + genes(\"$here/tracks/genes.bed\", transcripts=some)" 'use all or canonical'
+chkx "$tmpdir/d.csv + aes(x, y) + geom_point() + geom_tiplab()" 'belong to geom_tree()'
+chkx "$tmpdir/d.csv + geom_tree() + geom_tiplab(bogus=1)" 'tree geom option'
+
+# the declared caps
+chkx "$tmpdir/d.csv + aes(x, y) + geom_point() + scale_x_continuous(breaks=c($(seq -s, 1 257)))" 'at most 256 values'
+chkx "$tmpdir/d.csv + aes(x, y, colour=g) + geom_point() + scale_colour_manual(values=c($(seq -s, 1 65 | sed 's/[0-9]\+/\"red\"/g')))" 'at most 64 colours'
+
 echo "all tests passed"
