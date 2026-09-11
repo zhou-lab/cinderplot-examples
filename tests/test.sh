@@ -2820,7 +2820,6 @@ chk "aes(log10(x), y) + geom_point()" 'scale_x_log10()'
 chk "aes(x/y, y) + geom_point()" 'arithmetic'
 chk "aes(x, y) + geom_point(aes(colour=g))" 'top-level aes()'
 chk "aes(x, y) + geom_point() + geom_hline(aes(yintercept=2))" 'literal intercept'
-chk "aes(x, y) + geom_point() + facet_grid(g~x)" 'facet_grid() is not implemented'
 "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point() + labs(title='single') + ggtitle(\"T\", subtitle=\"Sub\")" \
     -o "$tmpdir/d7b.pdf"
 if command -v pdftotext >/dev/null 2>&1; then
@@ -3196,7 +3195,7 @@ chkx "$tmpdir/mat.tsv + heatmap(rownames=sideways)" 'rownames='
 chkx "$tmpdir/mat.tsv + heatmap(colnames=sideways)" 'colnames='
 chkx "$tmpdir/mat.tsv + heatmap(name=\"m\") + legend(right_of(\"m\"), bogus=1)" 'not implemented'
 chkx "$tmpdir/mat.tsv + annotation(\"$tmpdir/mat.tsv\", top_of(\"m\"))" 'must be a heatmap'
-chkx "$tmpdir/mat.tsv + heatmap(name=\"m\") + scale_fill_manual(values=c(\"red\"))" 'not supported in heatmap mode'
+chkx "$tmpdir/mat.tsv + heatmap(name=\"m\") + scale_fill_manual(values=c(\"red\"))" 'is a discrete palette, and this matrix is numeric'
 chkx "$tmpdir/mat.tsv + heatmap() + theme_bw()" 'presets have no effect in heatmap mode'
 chkx "$tmpdir/mat.tsv + heatmap() + coord_flip()" 'do not apply to heatmap mode'
 chkx "region(\"chr1:1-100\") + coverage(\"$here/tracks/atac.bedgraph\") + theme_bw()" 'presets have no effect on the track browser'
@@ -3208,5 +3207,372 @@ chkx "$tmpdir/d.csv + geom_tree() + geom_tiplab(bogus=1)" 'tree geom option'
 # the declared caps
 chkx "$tmpdir/d.csv + aes(x, y) + geom_point() + scale_x_continuous(breaks=c($(seq -s, 1 257)))" 'at most 256 values'
 chkx "$tmpdir/d.csv + aes(x, y, colour=g) + geom_point() + scale_colour_manual(values=c($(seq -s, 1 65 | sed 's/[0-9]\+/\"red\"/g')))" 'at most 64 colours'
+
+
+# ==== 2026-09-11: facet_grid(rows ~ cols) ===================================
+
+# NOTE FOR THE MERGE: tests/test.sh line 2823 asserts that facet_grid() is
+# refused --
+#   chk "aes(x, y) + geom_point() + facet_grid(g~x)" 'facet_grid() is not implemented'
+# -- and must go when this branch lands. The G6 block below replaces it with
+# the refusals that are still real.
+
+# ---- G1: facet_grid(rows ~ cols) -- a true 2-D grid --------------------------
+# Six rows over two row levels x three column levels, with (b, s) DELIBERATELY
+# absent: facet_grid draws a panel for every combination, so the figure must
+# hold 6 panels where facet_wrap would hold the 5 the data uses. Strips: one
+# per column along the top plus one per row down the right = 5.
+printf 'x,y,r,c\n1,2,a,p\n2,3,a,q\n3,4,a,s\n4,5,b,p\n5,6,b,q\n6,7,b,p\n' >"$tmpdir/fg.csv"
+svgn() { python3 "$here/tests/svgnorm.py" "$1"; }   # cairo spells SVG paint two ways
+PANEL='fill="rgb(92.2%, 92.2%, 92.2%)"'            # theme_gray panel background
+STRIP='fill="rgb(85.1%, 85.1%, 85.1%)"'            # facet strip background
+
+"$CINDERPLOT" "$tmpdir/fg.csv + aes(x, y) + geom_point() + facet_grid(r ~ c)" \
+    --size 7x5 --dpi 100 "$tmpdir/fg1.svg"
+test -s "$tmpdir/fg1.svg"
+svgn "$tmpdir/fg1.svg"
+np=$(grep -c "$PANEL" "$tmpdir/fg1.svg")
+ns=$(grep -c "$STRIP" "$tmpdir/fg1.svg")
+[ "$np" -eq 6 ] || { echo "facet_grid(r ~ c): $np panels, want 6 (the empty (b, s) combination needs one too)" >&2; exit 1; }
+[ "$ns" -eq 5 ] || { echo "facet_grid(r ~ c): $ns strips, want 5 (3 column + 2 row)" >&2; exit 1; }
+
+# The column strips label the top row left to right; the row strips label the
+# rows. pdftotext reads them out of the PDF form of the same figure.
+"$CINDERPLOT" "$tmpdir/fg.csv + aes(x, y) + geom_point() + facet_grid(r ~ c)" \
+    --size 7x5 --dpi 100 "$tmpdir/fg1.pdf"
+if command -v pdftotext >/dev/null 2>&1; then
+    pdftotext -layout "$tmpdir/fg1.pdf" - >"$tmpdir/fg1.txt"
+    head -1 "$tmpdir/fg1.txt" | grep -E 'p +q +s' >/dev/null \
+        || { echo "facet_grid(): column strips p/q/s are not along the top" >&2; cat "$tmpdir/fg1.txt" >&2; exit 1; }
+    grep -x ' *a *' "$tmpdir/fg1.txt" >/dev/null \
+        || { echo "facet_grid(): row strip 'a' missing" >&2; exit 1; }
+    grep -x ' *b *' "$tmpdir/fg1.txt" >/dev/null \
+        || { echo "facet_grid(): row strip 'b' missing" >&2; exit 1; }
+fi
+
+# ---- G2: row strips sit on the RIGHT, rotated to read top-to-bottom ---------
+# The editable SVG writes real <text> elements, so the strip's placement and
+# rotation are both readable: matrix(0 1 -1 0 tx ty) is the -90 degree turn
+# (the left axis title uses the opposite one, matrix(0 -1 1 0 ...)), and tx
+# past 450 of a 504pt-wide canvas is the right-hand edge.
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" \
+    "$tmpdir/fg.csv + aes(x, y) + geom_point() + facet_grid(r ~ c)" \
+    --size 7x5 --dpi 100 "$tmpdir/fg2.svg"
+nr=$(grep -o 'transform="matrix(0 1 -1 0 [0-9.]*' "$tmpdir/fg2.svg" \
+     | awk '$5 + 0 > 450' | wc -l)
+[ "$nr" -eq 2 ] || { echo "facet_grid(): $nr rotated strips at the right edge, want 2" >&2; exit 1; }
+
+# ---- G3: axes only on the outer edges ---------------------------------------
+# Shared scales, so the y axis belongs to the left column and the x axis to the
+# bottom row. Every tick label (#4d4d4d) must therefore sit either in the left
+# margin (x < 30) or in the bottom axis row (y > 330) of the 504x360 canvas --
+# a label between the panels means a panel drew its own axis.
+outer() {   # outer <editable-svg>
+    awk -F'"' '/fill="#4d4d4d"/ { if ($2 + 0 > 30 && $4 + 0 < 330) bad++ }
+               END { exit (bad > 0) }' "$1"
+}
+outer "$tmpdir/fg2.svg" || { echo "facet_grid(): tick labels between panels; axes are not on the outer edges" >&2; exit 1; }
+
+# ---- G4: scales= frees a range per ROW (y) and per COLUMN (x) ---------------
+# ggplot2's facet_grid semantics, not facet_wrap's per-panel one. Row a spans
+# y 2..4 and row b 5..7, so a freed y puts breaks at 2.5/3.5 that no fixed
+# figure has; column s holds the single x = 3, so a freed x breaks at 2.75.
+# The axes stay on the outer edges: the panels of a column share their x.
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" \
+    "$tmpdir/fg.csv + aes(x, y) + geom_point() + facet_grid(r ~ c, scales=\"free\")" \
+    --size 7x5 --dpi 100 "$tmpdir/fg4.svg"
+grep '>3\.5<' "$tmpdir/fg4.svg" >/dev/null \
+    || { echo "facet_grid(scales=\"free\"): row a did not get its own y range" >&2; exit 1; }
+grep '>2\.75<' "$tmpdir/fg4.svg" >/dev/null \
+    || { echo "facet_grid(scales=\"free\"): column s did not get its own x range" >&2; exit 1; }
+outer "$tmpdir/fg4.svg" || { echo "facet_grid(scales=\"free\"): freed axes were drawn per panel, not per row/column" >&2; exit 1; }
+
+# ---- G5: the one-sided forms, facet_grid(. ~ col) and facet_grid(row ~ .) ---
+# A single row of panels with column strips and no right-hand strip column,
+# and a single column of panels with row strips only.
+"$CINDERPLOT" "$tmpdir/fg.csv + aes(x, y) + geom_point() + facet_grid(. ~ c)" \
+    --size 7x5 --dpi 100 "$tmpdir/fg5a.svg"
+svgn "$tmpdir/fg5a.svg"
+[ "$(grep -c "$PANEL" "$tmpdir/fg5a.svg")" -eq 3 ] || { echo "facet_grid(. ~ c): want 3 panels" >&2; exit 1; }
+[ "$(grep -c "$STRIP" "$tmpdir/fg5a.svg")" -eq 3 ] || { echo "facet_grid(. ~ c): want 3 strips, all on top" >&2; exit 1; }
+
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" \
+    "$tmpdir/fg.csv + aes(x, y) + geom_point() + facet_grid(r ~ .)" \
+    --size 7x5 --dpi 100 "$tmpdir/fg5b.svg"
+nr=$(grep -o 'transform="matrix(0 1 -1 0 [0-9.]*' "$tmpdir/fg5b.svg" \
+     | awk '$5 + 0 > 450' | wc -l)
+[ "$nr" -eq 2 ] || { echo "facet_grid(r ~ .): want 2 rotated row strips at the right" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/fg.csv + aes(x, y) + geom_point() + facet_grid(r ~ .)" \
+    --size 7x5 --dpi 100 "$tmpdir/fg5c.svg"
+svgn "$tmpdir/fg5c.svg"
+[ "$(grep -c "$PANEL" "$tmpdir/fg5c.svg")" -eq 2 ] || { echo "facet_grid(r ~ .): want 2 panels" >&2; exit 1; }
+[ "$(grep -c "$STRIP" "$tmpdir/fg5c.svg")" -eq 2 ] || { echo "facet_grid(r ~ .): want 2 strips" >&2; exit 1; }
+
+# ---- G6: every unsupported spelling names the supported subset --------------
+gchk() {   # gchk <spec-tail> <expected stderr fragment>
+    if "$CINDERPLOT" "$tmpdir/fg.csv + $1" -o "$tmpdir/fg6.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+        echo "'$1' unexpectedly succeeded" >&2; exit 1
+    fi
+    grep -- "$2" "$tmpdir/err" >/dev/null || { echo "'$1': message lacks '$2':" >&2; cat "$tmpdir/err" >&2; exit 1; }
+}
+gchk "aes(x, y) + geom_point() + facet_grid(r)" 'two-sided formula'
+gchk "aes(x, y) + geom_point() + facet_grid(~ c)" 'two-sided formula'
+gchk "aes(x, y) + geom_point() + facet_grid(. ~ .)" 'names no faceting variable'
+gchk "aes(x, y) + geom_point() + facet_grid(r ~ r)" 'a grid needs two variables'
+gchk "aes(x, y) + geom_point() + facet_grid(r + c ~ c)" 'one variable per side'
+gchk "aes(x, y) + geom_point() + facet_grid(r ~ c + x)" 'one variable per side'
+gchk "aes(x, y) + geom_point() + facet_grid(r ~ nosuch)" 'column `nosuch` not found'
+gchk "aes(x, y) + geom_point() + facet_grid(r ~ c, ncol=2)" 'the grid shape is the two variables'
+gchk "aes(x, y) + geom_point() + facet_grid(r ~ c, levels=c(\"a\"))" 'option `levels=` is not implemented'
+gchk "aes(x, y) + geom_point() + facet_grid(r ~ c, scales=\"free_colour\")" 'not implemented for facet_grid()'
+gchk "aes(x, y) + geom_point() + facet_grid(r ~ c, scales=\"wild\")" 'use fixed, free_x, free_y'
+gchk "aes(x, y) + geom_point() + facet_grid(r ~ c, bogus=1)" 'supported: scales='
+gchk "aes(x=factor(x), y) + geom_point() + facet_grid(r ~ c) + coord_polar()" 'not implemented with facet_grid()'
+# the two-way facet_wrap refusal now points at the verb that does it
+gchk "aes(x, y) + geom_point() + facet_wrap(~r + c)" 'use facet_grid(rowvar ~ colvar)'
+
+# ---- G7: the panel grid is bounded by the gtable, and says so ---------------
+# The layout spends 4 gtable rows per panel row; the old guard counted 3, so a
+# tall single-column wrap (63..83 rows) wrote past rowh[] and still produced a
+# file. Both facet verbs must refuse instead, naming the counts.
+i=1
+printf 'x,y,g,h\n' >"$tmpdir/fgbig.csv"
+while [ "$i" -le 70 ]; do
+    printf '%s,%s,g%s,h%s\n' "$i" "$i" "$i" "$((i % 3))" >>"$tmpdir/fgbig.csv"
+    i=$((i + 1))
+done
+if "$CINDERPLOT" "$tmpdir/fgbig.csv + aes(x, y) + geom_point() + facet_wrap(~g, ncol=1)" \
+        --size 6x60 -o "$tmpdir/fg7.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "70 facet rows unexpectedly succeeded (the gtable holds 62)" >&2; exit 1
+fi
+grep 'too many facet panels (70)' "$tmpdir/err" >/dev/null
+grep '62 rows' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "$tmpdir/fgbig.csv + aes(x, y) + geom_point() + facet_grid(g ~ h)" \
+        -o "$tmpdir/fg7.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "a 70 x 3 facet_grid unexpectedly succeeded" >&2; exit 1
+fi
+grep 'a 70 x 3 layout' "$tmpdir/err" >/dev/null
+
+echo "facet_grid tests passed"
+
+
+# ==== 2026-09-11: a discrete heatmap fill ===================================
+
+# Discrete fill in heatmap mode: a categorical matrix (mutation calls, a label
+# grid, a per-sample class) colours one hue per level and keys a discrete
+# legend, where before every cell had to be a number.
+#
+# Cairo spells SVG paint two ways depending on its version, so normalise before
+# grepping fills -- as tests/test.sh does.
+svgnorm() { python3 "$here/tests/svgnorm.py" "$@"; }
+
+# Row-major 3x3 of categories: AMP appears once, MUT three times, WT five.
+printf 'sample,TP53,KRAS,EGFR\ns1,MUT,WT,AMP\ns2,WT,WT,WT\ns3,MUT,MUT,WT\n' >"$tmpdir/calls.csv"
+
+# ---- a text matrix renders, one colour per level ----
+# It used to stop at "matrix column `TP53` is not numeric".
+"$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=none, rownames=none, colnames=none)" \
+    --size 2x2 -o "$tmpdir/calls.svg"
+test -s "$tmpdir/calls.svg"
+svgnorm "$tmpdir/calls.svg"
+# nothing but the nine cells is painted, in three colours, one per level
+n=$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/calls.svg" | wc -l)
+k=$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/calls.svg" | sort -u | wc -l)
+if [ "$n" -ne 9 ] || [ "$k" -ne 3 ]; then
+    echo "categorical matrix painted $n cells in $k colours; wanted 9 in 3" >&2
+    exit 1
+fi
+
+# ---- named scale_fill_manual puts the right colour on the right level ----
+# Levels sort lexically (AMP, MUT, WT) as R's factors do; the two named levels
+# take their colours and AMP, unnamed, keeps its default hue. The cells are
+# emitted row-major, so the whole sequence is checkable, not just the counts.
+"$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=none, rownames=none, colnames=none)
+     + scale_fill_manual(values=c(\"MUT\"=\"#FF0000\", \"WT\"=\"#0000FF\"))" \
+    --size 2x2 -o "$tmpdir/named.svg"
+svgnorm "$tmpdir/named.svg"
+got=$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/named.svg" | sed -e 's/.*rgb(//' -e 's/).*//' | tr '\n' '|')
+want='100%, 0%, 0%|0%, 0%, 100%|97.254902%, 46.27451%, 42.745098%|0%, 0%, 100%|0%, 0%, 100%|0%, 0%, 100%|100%, 0%, 0%|100%, 0%, 0%|0%, 0%, 100%|'
+if [ "$got" != "$want" ]; then
+    echo "scale_fill_manual(values=c(...)) mapped the levels wrongly" >&2
+    echo "  got  $got" >&2
+    echo "  want $want" >&2
+    exit 1
+fi
+
+# ---- a positional values= list is read level by level, and must be long enough ----
+"$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=none, rownames=none, colnames=none)
+     + scale_fill_manual(values=c(\"#FF0000\",\"#00FF00\",\"#0000FF\"))" \
+    --size 2x2 -o "$tmpdir/pos.svg"
+svgnorm "$tmpdir/pos.svg"
+grep -q 'fill="rgb(0%, 100%, 0%)"' "$tmpdir/pos.svg" \
+    || { echo "positional values= did not reach the second level" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=none)
+     + scale_fill_manual(values=c(\"red\",\"blue\"))" \
+    --size 2x2 -o "$tmpdir/short.svg" 2>"$tmpdir/short.err"; then
+    echo "a values= list shorter than the level count was accepted" >&2
+    exit 1
+fi
+grep -q "gives 2 colours; the matrix has 3 categories" "$tmpdir/short.err" \
+    || { echo "short values= error does not name the counts:" >&2; cat "$tmpdir/short.err" >&2; exit 1; }
+
+# ---- legend() beside a categorical heatmap is a KEY, not a colourbar ----
+# One swatch and one label per level, and no tick numbers.
+"$CINDERPLOT" "$tmpdir/calls.csv + heatmap(name=\"m\", cluster=none, rownames=none,
+     colnames=none) + legend(right_of(\"m\"), title=\"call\")" \
+    --size 4x3 -o "$tmpdir/key.pdf"
+pdftotext -layout "$tmpdir/key.pdf" "$tmpdir/key.txt"
+for lev in AMP MUT WT call; do
+    grep -q "$lev" "$tmpdir/key.txt" \
+        || { echo "discrete heatmap legend does not list \`$lev\`" >&2; cat "$tmpdir/key.txt" >&2; exit 1; }
+done
+# a colourbar would have drawn numeric break labels
+if grep -qE '^[[:space:]]*[0-9.]+[[:space:]]*$' "$tmpdir/key.txt"; then
+    echo "discrete heatmap legend drew colourbar break numbers" >&2
+    exit 1
+fi
+# the key is drawn as three swatch rects: 9 cells + 3 swatches. --editable-svg
+# keeps the three labels as <text>; without it cairo fills each glyph as a path
+# and those paths land in the same fill= count.
+"$CINDERPLOT" "$tmpdir/calls.csv + heatmap(name=\"m\", cluster=none, rownames=none,
+     colnames=none) + legend(right_of(\"m\"))" --size 4x3 --editable-svg -o "$tmpdir/key.svg"
+svgnorm "$tmpdir/key.svg"
+n=$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/key.svg" | wc -l)
+[ "$n" -eq 12 ] || { echo "discrete key painted $n rects; wanted 9 cells + 3 swatches" >&2; exit 1; }
+
+# ---- labels=on prints the category, not the level index ----
+"$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=none, rownames=none, colnames=none, labels=on)" \
+    --size 4x3 -o "$tmpdir/lab.pdf"
+pdftotext -layout "$tmpdir/lab.pdf" "$tmpdir/lab.txt"
+for lev in AMP MUT WT; do
+    grep -q "$lev" "$tmpdir/lab.txt" \
+        || { echo "labels=on did not print the category \`$lev\`" >&2; cat "$tmpdir/lab.txt" >&2; exit 1; }
+done
+if grep -qE '(^|[^A-Za-z0-9])[012]([^A-Za-z0-9]|$)' "$tmpdir/lab.txt"; then
+    echo "labels=on printed the level index instead of the category" >&2
+    exit 1
+fi
+
+# ---- numeric codes are categories only when asked ----
+# 0/1/2/10 is indistinguishable from a measurement, so discrete=TRUE is the
+# opt-in; the key then sorts NUMERICALLY (0, 1, 2, 10), not lexically.
+printf 'sample,a,b,c\ns1,0,1,2\ns2,2,0,1\ns3,10,0,0\n' >"$tmpdir/codes.csv"
+"$CINDERPLOT" "$tmpdir/codes.csv + heatmap(name=\"m\", cluster=none, rownames=none,
+     colnames=none, discrete=TRUE) + legend(right_of(\"m\"))" --size 4x3 -o "$tmpdir/codes.pdf"
+pdftotext -layout "$tmpdir/codes.pdf" "$tmpdir/codes.txt"
+order=$(tr -s ' \n' '\n' <"$tmpdir/codes.txt" | grep -x -e 0 -e 1 -e 2 -e 10 | tr '\n' ' ')
+[ "$order" = "0 1 2 10 " ] \
+    || { echo "discrete=TRUE keyed the numeric codes as [$order]; wanted 0 1 2 10" >&2; exit 1; }
+# without it the same file is still a continuous ramp: four levels would be
+# four swatches, a colourbar is 64 strips
+"$CINDERPLOT" "$tmpdir/codes.csv + heatmap(name=\"m\", cluster=none, rownames=none,
+     colnames=none) + legend(right_of(\"m\"))" --size 4x3 --editable-svg -o "$tmpdir/cont.svg"
+svgnorm "$tmpdir/cont.svg"
+n=$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/cont.svg" | wc -l)
+[ "$n" -eq 73 ] || { echo "a numeric matrix without discrete=TRUE drew $n rects; wanted 9 + 64" >&2; exit 1; }
+
+# ---- cluster= over categories errors, and says what to do instead ----
+if "$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=rows)" \
+    --size 2x2 -o "$tmpdir/cl.svg" 2>"$tmpdir/cl.err"; then
+    echo "cluster=rows on a categorical matrix was accepted" >&2
+    exit 1
+fi
+grep -q "no distance between two categories" "$tmpdir/cl.err" \
+    || { echo "cluster= refusal does not say why:" >&2; cat "$tmpdir/cl.err" >&2; exit 1; }
+grep -q "cluster=none" "$tmpdir/cl.err" \
+    || { echo "cluster= refusal does not name the alternative" >&2; exit 1; }
+# cluster=diagonal computes no distance, so it still works
+printf 'x,s1,s3,s2\ns1,a,b,c\ns2,c,a,b\ns3,b,c,a\n' >"$tmpdir/diagcat.csv"
+"$CINDERPLOT" "$tmpdir/diagcat.csv + heatmap(cluster=diagonal)" --size 3x3 -o "$tmpdir/diagcat.svg"
+test -s "$tmpdir/diagcat.svg"
+
+# ---- too many levels errors, naming the cap ----
+python3 - "$tmpdir/many.csv" <<'PY'
+import sys
+rows, cols = 10, 10
+with open(sys.argv[1], "w") as f:
+    f.write("s," + ",".join("c%d" % c for c in range(cols)) + "\n")
+    for r in range(rows):
+        f.write("r%d," % r + ",".join("v%d" % (r * cols + c) for c in range(cols)) + "\n")
+PY
+if "$CINDERPLOT" "$tmpdir/many.csv + heatmap(cluster=none)" --size 3x3 -o "$tmpdir/many.svg" \
+    2>"$tmpdir/many.err"; then
+    echo "a 100-level categorical matrix was accepted" >&2
+    exit 1
+fi
+grep -q "more than 64 distinct values" "$tmpdir/many.err" \
+    || { echo "the level cap error does not name the cap:" >&2; cat "$tmpdir/many.err" >&2; exit 1; }
+
+# ---- a continuous scale over categories errors, and vice versa ----
+if "$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=none) + scale_fill_viridis()" \
+    --size 2x2 -o "$tmpdir/vir.svg" 2>"$tmpdir/vir.err"; then
+    echo "scale_fill_viridis() over a categorical matrix was accepted" >&2
+    exit 1
+fi
+grep -q "continuous ramp and this matrix is categorical" "$tmpdir/vir.err" \
+    || { echo "continuous-over-categories error is unclear:" >&2; cat "$tmpdir/vir.err" >&2; exit 1; }
+
+# ---- a part-text matrix is ambiguous and stops, naming both sides ----
+printf 'sample,a,b\ns1,1,MUT\ns2,2,WT\n' >"$tmpdir/mixed.csv"
+if "$CINDERPLOT" "$tmpdir/mixed.csv + heatmap(cluster=none)" --size 2x2 -o "$tmpdir/mx.svg" \
+    2>"$tmpdir/mx.err"; then
+    echo "a matrix mixing numeric and text columns was accepted" >&2
+    exit 1
+fi
+grep -q "\`a\` is numeric" "$tmpdir/mx.err" && grep -q "\`b\` is text" "$tmpdir/mx.err" \
+    || { echo "the mixed-columns error does not name both columns:" >&2; cat "$tmpdir/mx.err" >&2; exit 1; }
+# discrete=TRUE resolves it: read every cell as a category
+"$CINDERPLOT" "$tmpdir/mixed.csv + heatmap(cluster=none, discrete=TRUE)" \
+    --size 2x2 -o "$tmpdir/mx.svg"
+test -s "$tmpdir/mx.svg"
+# discrete=FALSE pins the other reading, so text stays the error it always was
+if "$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=none, discrete=FALSE)" \
+    --size 2x2 -o "$tmpdir/df.svg" 2>"$tmpdir/df.err"; then
+    echo "discrete=FALSE rendered a text matrix" >&2
+    exit 1
+fi
+grep -q "is not numeric" "$tmpdir/df.err" \
+    || { echo "discrete=FALSE error is unclear:" >&2; cat "$tmpdir/df.err" >&2; exit 1; }
+
+# ---- two categorical heatmaps share ONE key ----
+# The second file has a level the first does not (DEL) and lacks one it has
+# (MUT); the union is AMP, DEL, MUT, WT and a colour means the same in both.
+printf 'sample,TP53,KRAS,EGFR\nx1,WT,AMP,WT\nx2,DEL,WT,WT\n' >"$tmpdir/calls2.csv"
+"$CINDERPLOT" "$tmpdir/calls.csv + heatmap(name=\"m\", cluster=none, rownames=none, colnames=none)
+     + heatmap(data=\"$tmpdir/calls2.csv\", beneath(\"m\"), name=\"n\", cluster=none,
+               rownames=none, colnames=none)
+     + legend(right_of(\"m\"))" --size 4x4 --editable-svg -o "$tmpdir/two.svg"
+svgnorm "$tmpdir/two.svg"
+python3 - "$tmpdir/two.svg" <<'PY'
+import re, sys
+fills = re.findall(r'fill="(rgb\([^"]*\))"', open(sys.argv[1]).read())
+cells, key = fills[:15], fills[15:]
+if len(key) != 4:
+    sys.exit("one key for both heatmaps: got %d swatches, wanted 4" % len(key))
+# top heatmap rows: MUT WT AMP / WT WT WT / MUT MUT WT
+# bottom heatmap rows: WT AMP WT / DEL WT WT
+want = "MUT WT AMP WT WT WT MUT MUT WT WT AMP WT DEL WT WT".split()
+seen = {}
+for lev, f in zip(want, cells):
+    if seen.setdefault(lev, f) != f:
+        sys.exit("level %s took two colours across the two heatmaps" % lev)
+if len(set(seen.values())) != 4:
+    sys.exit("four levels shared %d colours" % len(set(seen.values())))
+if set(seen.values()) != set(key):
+    sys.exit("the key colours are not the cell colours")
+PY
+
+# ---- a categorical and a numeric heatmap cannot share one fill scale ----
+printf 'sample,a,b\ny1,1,2\ny2,3,4\n' >"$tmpdir/nums.csv"
+if "$CINDERPLOT" "$tmpdir/calls.csv + heatmap(name=\"m\", cluster=none)
+     + heatmap(data=\"$tmpdir/nums.csv\", beneath(\"m\"), name=\"n\", cluster=none)" \
+    --size 4x4 -o "$tmpdir/kinds.svg" 2>"$tmpdir/kinds.err"; then
+    echo "a categorical and a numeric heatmap rendered together" >&2
+    exit 1
+fi
+grep -q "share a single fill scale" "$tmpdir/kinds.err" \
+    || { echo "the mixed-kind error is unclear:" >&2; cat "$tmpdir/kinds.err" >&2; exit 1; }
+
+echo "heatfill: all cases passed"
 
 echo "all tests passed"
