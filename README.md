@@ -22,7 +22,7 @@ Enable it under *Settings → Pages → Deploy from a branch → `main` / `docs`
 | `data/` | small CSV datasets (mtcars, expr, …) used by the tests and quick demos, plus the whole-genome CNV example (`k562.bins.tsv`, `k562.segments.tsv`; hg38 seqinfo and cytoband come from the genome repo below) |
 | `tracks/` | locus track-browser example (synthetic placeholder): coverage, genes, peaks, loops |
 | `region/` | sesame `visualizeRegion` target (real ADA/HM450 data): a genome-anchored beta heatmap + gene models — see its README for the co-dev spec |
-| `tests/` | regression suite (`test.sh`) + `cluster_check.c` |
+| `tests/` | everything that runs: `test.sh` (the regression suite), `gallery.sh` (the published figures, rendered and checked), `svgnorm.py`, `cluster_check.c` |
 
 Each subdirectory has its own README with the exact commands.
 
