@@ -2854,8 +2854,6 @@ grep -- '-r, --region' "$tmpdir/help" >/dev/null
     -o "$tmpdir/hist.pdf"
 test -s "$tmpdir/hist.pdf"
 chk "aes(x) + geom_histogram(binwidth=1)" 'binwidth=) is not implemented'
-chk "aes(x, y) + geom_line(size=2)" 'line width on geom_line()'
-chk "aes(x, y) + geom_line(linewidth=2)" 'line width on geom_line()'
 
 # ---- D1: output naming ---------------------------------------------------------
 if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + geom_point()" -o "$tmpdir/fig.jpg" \
@@ -3683,5 +3681,244 @@ if "$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rg.tsv\", rowgroup=\
     echo "empty rowgroup= unexpectedly succeeded" >&2; exit 1
 fi
 grep 'rowgroup= expects the quoted separator' "$tmpdir/err" >/dev/null
+
+
+# ==== 2026-09-15: aes(group=) and linewidth= ================================
+
+svgnorm() { python3 "$here/tests/svgnorm.py" "$@"; }
+
+# Four series, two per colour level: a,b under p and c,d under q.
+printf 'x,y,g,c,n\n' >"$tmpdir/grp.csv"
+for x in 1 2 3 4 5; do
+    printf '%s,%s,a,p,1\n%s,%s,b,p,2\n%s,%s,c,q,3\n%s,%s,d,q,4\n' \
+        $x $x $x $((x+1)) $x $((x+2)) $x $((x+4)) >>"$tmpdir/grp.csv"
+done
+
+# ---- aes(group=): one colour, one polyline per group -------------------------
+# Five reconstructions in one colour used to collapse into a single zig-zag
+# line, since only a discrete colour= partitioned the rows. group= partitions
+# without touching colour or the legend.
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y, group=g) + geom_line()" \
+    --size 4x3 --editable-svg -o "$tmpdir/grp.svg"
+svgnorm "$tmpdir/grp.svg"
+test "$(grep -c 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/grp.svg")" -eq 4
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y) + geom_line()" \
+    --size 4x3 --editable-svg -o "$tmpdir/nogrp.svg"
+svgnorm "$tmpdir/nogrp.svg"
+test "$(grep -c 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/nogrp.svg")" -eq 1
+# no legend for group=: no key text
+if grep -q '>g</text>' "$tmpdir/grp.svg"; then
+    echo "aes(group=) drew a legend" >&2; exit 1
+fi
+
+# ---- colour= + group=: the series is the (colour, group) pair -------------
+# colour alone: one line + one legend key stroke per colour level
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y, colour=c) + geom_line()" \
+    --size 4x3 --editable-svg -o "$tmpdir/cg0.svg"
+svgnorm "$tmpdir/cg0.svg"
+test "$(grep -c 'stroke="rgb(97.254902%, 46.27451%, 42.745098%)"' "$tmpdir/cg0.svg")" -eq 2
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y, colour=c, group=g) + geom_line()" \
+    --size 4x3 --editable-svg -o "$tmpdir/cg.svg"
+svgnorm "$tmpdir/cg.svg"
+# two lines + the key, in each colour; the legend is unchanged
+test "$(grep -c 'stroke="rgb(97.254902%, 46.27451%, 42.745098%)"' "$tmpdir/cg.svg")" -eq 3
+test "$(grep -c 'stroke="rgb(0%, 74.901961%, 76.862745%)"' "$tmpdir/cg.svg")" -eq 3
+test "$(grep -c '>p</text>' "$tmpdir/cg.svg")" -eq 1
+
+# ---- geom_smooth() fits one curve per group too --------------------------------
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y, group=g) + geom_smooth(se=FALSE)" \
+    --size 4x3 --editable-svg -o "$tmpdir/gsm.svg"
+svgnorm "$tmpdir/gsm.svg"
+test "$(grep -c 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/gsm.svg")" -eq 4
+
+# ---- group= on a numeric column errors; factor() makes it discrete -----------
+if "$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y, group=n) + geom_line()" \
+        -o "$tmpdir/gnum.pdf" 2>"$tmpdir/err"; then
+    echo "numeric group= unexpectedly succeeded" >&2; exit 1
+fi
+grep 'aes(group=n) is a numeric column' "$tmpdir/err" >/dev/null
+grep 'factor(n)' "$tmpdir/err" >/dev/null
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y, group=factor(n)) + geom_line()" \
+    --size 4x3 --editable-svg -o "$tmpdir/gfac.svg"
+svgnorm "$tmpdir/gfac.svg"
+test "$(grep -c 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/gfac.svg")" -eq 4
+
+# ---- group= without a line layer is a no-op, so it errors ----------------------
+if "$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y, group=g) + geom_point()" \
+        -o "$tmpdir/gpt.pdf" 2>"$tmpdir/err"; then
+    echo "group= on points alone unexpectedly succeeded" >&2; exit 1
+fi
+grep 'aes(group=) needs a geom_line() or geom_smooth() layer' "$tmpdir/err" >/dev/null
+# a stat geom beside the line would ignore it
+if "$CINDERPLOT" "$tmpdir/grp.csv + aes(x=c, y, group=g) + geom_boxplot() + geom_line()" \
+        -o "$tmpdir/gbox.pdf" 2>"$tmpdir/err"; then
+    echo "group= with geom_boxplot unexpectedly succeeded" >&2; exit 1
+fi
+grep 'aes(group=) with geom_boxplot() is not implemented' "$tmpdir/err" >/dev/null
+
+# ---- linewidth= on the stroke geoms ----------------------------------------------
+# ggplot linewidth units: lw_pt(u) = u * 2.845276 * 72/96 pt, so 0.5 -> 1.066979
+# (geom_line's default) and 2 -> 4.267914.
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y) + geom_line(linewidth=2)" \
+    --size 4x3 --editable-svg -o "$tmpdir/lw.svg"
+svgnorm "$tmpdir/lw.svg"
+grep 'stroke-width="4.267914"' "$tmpdir/lw.svg" >/dev/null
+test "$(grep -c 'stroke-width="4.267914"' "$tmpdir/lw.svg")" -eq 1
+# size= is the pre-3.4 spelling of the same thing: identical output
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y) + geom_line(size=2)" \
+    --size 4x3 --editable-svg -o "$tmpdir/lws.svg"
+svgnorm "$tmpdir/lws.svg"
+cmp -s "$tmpdir/lw.svg" "$tmpdir/lws.svg"
+# geom_smooth(linewidth=0.28), the manuscript's width; default is 1 (2.133957)
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y, group=g) + geom_smooth(se=FALSE, linewidth=0.28)" \
+    --size 4x3 --editable-svg -o "$tmpdir/lwsm.svg"
+svgnorm "$tmpdir/lwsm.svg"
+test "$(grep -c 'stroke-width="0.597508"' "$tmpdir/lwsm.svg")" -eq 4
+if grep -q 'stroke-width="2.133957"' "$tmpdir/lwsm.svg"; then
+    echo "geom_smooth(linewidth=) left the default width" >&2; exit 1
+fi
+# reference lines, segments and errorbars take it too
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y) + geom_point() + geom_hline(yintercept=3, linewidth=1.5)
+    + geom_vline(xintercept=2, size=1.5) + geom_abline(slope=1, intercept=0, linewidth=1.5)" \
+    --size 4x3 --editable-svg -o "$tmpdir/lwref.svg"
+svgnorm "$tmpdir/lwref.svg"
+test "$(grep -c 'stroke-width="3.200935"' "$tmpdir/lwref.svg")" -eq 3
+"$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y, xend=y, yend=x) + geom_segment(linewidth=1)" \
+    --size 4x3 --editable-svg -o "$tmpdir/lwseg.svg"
+svgnorm "$tmpdir/lwseg.svg"
+test "$(grep -c 'stroke-width="2.133957"' "$tmpdir/lwseg.svg")" -eq 20
+printf 'x,m,lo,hi\na,2,1,3\nb,3,2,4\n' >"$tmpdir/eb.csv"
+"$CINDERPLOT" "$tmpdir/eb.csv + aes(x=factor(x), y=m, ymin=lo, ymax=hi) + geom_errorbar(linewidth=1)" \
+    --size 4x3 --editable-svg -o "$tmpdir/lweb.svg"
+svgnorm "$tmpdir/lweb.svg"
+test "$(grep -c 'stroke-width="2.133957"' "$tmpdir/lweb.svg")" -eq 6
+
+# ---- linewidth= must be positive ---------------------------------------------------
+for v in 0 -1; do
+    if "$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y) + geom_line(linewidth=$v)" \
+            -o "$tmpdir/lw0.pdf" 2>"$tmpdir/err"; then
+        echo "geom_line(linewidth=$v) unexpectedly succeeded" >&2; exit 1
+    fi
+    grep 'geom_line(linewidth=) expects a number > 0' "$tmpdir/err" >/dev/null
+done
+if "$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y) + geom_smooth(se=FALSE, size=0)" \
+        -o "$tmpdir/lw0.pdf" 2>"$tmpdir/err"; then
+    echo "geom_smooth(size=0) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'geom_smooth(size=) expects a number > 0' "$tmpdir/err" >/dev/null
+
+echo "grammar.sh: all tests passed"
+
+
+# ==== 2026-09-15: interval(labels=) and rowcolour= ==========================
+
+svgnorm() { python3 "$here/tests/svgnorm.py" "$@"; }
+
+# ---- interval(labels=): no smear on a dense 4-column BED -------------------
+# A CpG tick track names every feature in its 4th column; 40 ticks a few bp
+# apart in a 1 kb window printed 40 names over one another. By default a name
+# is drawn only where it fits before the next feature in its lane, so the
+# crowded ticks keep their boxes and lose their names; the last one has
+# nothing after it and keeps its label.
+: >"$tmpdir/dense.bed"
+i=0
+while [ $i -lt 40 ]; do
+    printf 'chr1\t%d\t%d\tcg%02d\n' $((100 + i * 20)) $((102 + i * 20)) $i >>"$tmpdir/dense.bed"
+    i=$((i + 1))
+done
+"$CINDERPLOT" "region(\"chr1:0-1000\") + interval(\"$tmpdir/dense.bed\", name=\"CpGs\")" \
+    --size 6x1.5 --editable-svg -o "$tmpdir/dense.svg"
+test "$(grep -c '>cg[0-9]*</text>' "$tmpdir/dense.svg")" -le 1
+# and every box is still there
+svgnorm "$tmpdir/dense.svg"
+test "$(grep -c 'fill="rgb(35%, 35%, 35%)"' "$tmpdir/dense.svg")" -eq 40
+# labels=on is the caller insisting: all 40 names, crowded or not
+"$CINDERPLOT" "region(\"chr1:0-1000\") + interval(\"$tmpdir/dense.bed\", name=\"CpGs\", labels=on)" \
+    --size 6x1.5 --editable-svg -o "$tmpdir/dense_on.svg"
+test "$(grep -c '>cg[0-9]*</text>' "$tmpdir/dense_on.svg")" -eq 40
+
+# a sparse BED keeps its names by default, and labels=off drops them all
+"$CINDERPLOT" "region(\"chr1:1000000-1200000\") + interval(\"$here/tracks/peaks.bed\", name=\"peaks\")" \
+    --size 6x1.5 --editable-svg -o "$tmpdir/sparse.svg"
+test "$(grep -c '>peak[0-9]*</text>' "$tmpdir/sparse.svg")" -eq 4
+"$CINDERPLOT" "region(\"chr1:1000000-1200000\") + interval(\"$here/tracks/peaks.bed\", name=\"peaks\", labels=off)" \
+    --size 6x1.5 --editable-svg -o "$tmpdir/sparse_off.svg"
+test "$(grep -c '>peak[0-9]*</text>' "$tmpdir/sparse_off.svg")" -eq 0
+grep -q '>peaks</text>' "$tmpdir/sparse_off.svg"          # the track name stays
+
+# labels= is interval()'s alone; elsewhere the error names the alternatives
+if "$CINDERPLOT" "region(\"chr1:1000000-1200000\") + genes(\"$here/tracks/genes.bed\", labels=off)" \
+        -o "$tmpdir/lab_err.pdf" 2>"$tmpdir/err"; then
+    echo "genes(labels=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'option `labels` is not valid for genes(); supported: name=' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + interval(\"$tmpdir/dense.bed\", labels=maybe)" \
+        -o "$tmpdir/lab_err2.pdf" 2>"$tmpdir/err"; then
+    echo "labels=maybe unexpectedly succeeded" >&2; exit 1
+fi
+grep 'labels=maybe invalid; use on or off' "$tmpdir/err" >/dev/null
+
+# ---- matrix(rowgroup=, rowcolour=): the group name in its lineage colour ----
+# A `group colour` table colours each group name in the gutter and puts a
+# filled swatch beside it; a group the table does not name keeps black and
+# gets no swatch.
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample\n' >"$tmpdir/rc.tsv"
+for s in "Neuron | truth" "Neuron | pred" "Liver | truth" "Liver | pred"; do
+    printf 'chr1\t100\t102\tp1\t0.3\t%s\n' "$s" >>"$tmpdir/rc.tsv"
+    printf 'chr1\t400\t402\tp2\t0.7\t%s\n' "$s" >>"$tmpdir/rc.tsv"
+done
+printf 'group\tcolour\nNeuron\t#ff0000\nUnseen\tsteelblue\n' >"$tmpdir/cols.tsv"
+"$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rc.tsv\", x=genomic,
+     rowgroup=\" | \", rowcolour=\"$tmpdir/cols.tsv\", cluster=none)" \
+    --size 5x3 --editable-svg -o "$tmpdir/rc.svg"
+grep -q 'fill="#ff0000">Neuron</text>' "$tmpdir/rc.svg"
+grep -q 'fill="#000000">Liver</text>' "$tmpdir/rc.svg"
+# the swatch: exactly one filled red path, and nothing red before rowcolour=
+svgnorm "$tmpdir/rc.svg"
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/rc.svg")" -eq 1
+"$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rc.tsv\", x=genomic,
+     rowgroup=\" | \", cluster=none)" --size 5x3 --editable-svg -o "$tmpdir/rc0.svg"
+svgnorm "$tmpdir/rc0.svg"
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/rc0.svg")" -eq 0
+# rowcolor= is the same option, and `color` heads the column just as well
+printf 'group\tcolor\nLiver\t#00ff00\n' >"$tmpdir/cols_us.tsv"
+"$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rc.tsv\", x=genomic,
+     rowgroup=\" | \", rowcolor=\"$tmpdir/cols_us.tsv\", cluster=none)" \
+    --size 5x3 --editable-svg -o "$tmpdir/rc_us.svg"
+grep -q 'fill="#00ff00">Liver</text>' "$tmpdir/rc_us.svg"
+grep -q 'fill="#000000">Neuron</text>' "$tmpdir/rc_us.svg"
+
+# a colour that does not parse errors naming the row and the group
+printf 'group\tcolour\nNeuron\t#ff0000\nLiver\tnotacolour\n' >"$tmpdir/bad.tsv"
+if "$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rc.tsv\", x=genomic,
+        rowgroup=\" | \", rowcolour=\"$tmpdir/bad.tsv\", cluster=none)" \
+        -o "$tmpdir/bad.pdf" 2>"$tmpdir/err"; then
+    echo "bad rowcolour entry unexpectedly succeeded" >&2; exit 1
+fi
+grep 'rowcolour(.*bad.tsv"): row 3 (group `Liver`) colour `notacolour` invalid' "$tmpdir/err" >/dev/null
+# a table without the two columns errors too
+printf 'name\thex\nNeuron\t#ff0000\n' >"$tmpdir/nocol.tsv"
+if "$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rc.tsv\", x=genomic,
+        rowgroup=\" | \", rowcolour=\"$tmpdir/nocol.tsv\", cluster=none)" \
+        -o "$tmpdir/nocol.pdf" 2>"$tmpdir/err"; then
+    echo "rowcolour table without group/colour columns unexpectedly succeeded" >&2; exit 1
+fi
+grep 'needs columns group and colour' "$tmpdir/err" >/dev/null
+
+# rowcolour= without rowgroup= has nothing to colour
+if "$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rc.tsv\", x=genomic,
+        rowcolour=\"$tmpdir/cols.tsv\", cluster=none)" -o "$tmpdir/norg.pdf" 2>"$tmpdir/err"; then
+    echo "rowcolour= without rowgroup= unexpectedly succeeded" >&2; exit 1
+fi
+grep 'rowcolour= .*needs rowgroup="SEP"' "$tmpdir/err" >/dev/null
+
+# rowcolour= is matrix()'s; on another track the error lists what is valid
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + interval(\"$tmpdir/dense.bed\", rowcolour=\"$tmpdir/cols.tsv\")" \
+        -o "$tmpdir/rc_err.pdf" 2>"$tmpdir/err"; then
+    echo "interval(rowcolour=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'option `rowcolour` is not valid for interval(); supported: name=' "$tmpdir/err" >/dev/null
+
+echo "all tests passed"
 
 echo "all tests passed"
