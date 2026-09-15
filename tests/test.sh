@@ -4139,4 +4139,160 @@ done
 
 echo "all tests passed"
 
+
+# ==== 2026-09-15: track-mode legend, matrix(discrete=TRUE), labels= ========
+
+unset CINDERPLOT_EDITABLE_SVG CINDERPLOT_BASE_LINE_SIZE
+svgnorm() { python3 "$here/tests/svgnorm.py" "$@"; }
+texts() { grep -o '<text[^>]*>[^<]*</text>' "$1" | sed 's/<text[^>]*>//; s#</text>##'; }
+fills() { grep -c "fill=\"$2\"" "$1" || true; }
+BLUE='rgb(27.058824%, 45.882353%, 70.588235%)'     # #4575b4
+RED='rgb(84.313725%, 18.823529%, 15.294118%)'      # #d73027
+GREY='rgb(74.117647%, 74.117647%, 74.117647%)'     # #bdbdbd, the background=
+
+# ---- a 0/1 call matrix in the long shape matrix() reads, one NA cell -------
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample\n' >"$tmpdir/calls.tsv"
+i=0
+while [ $i -lt 12 ]; do
+    for smp in "A | truth" "A | pred" "B | truth"; do
+        v=$(( (i + ${#smp}) % 2 ))
+        [ $i -eq 5 ] && [ "$smp" = "B | truth" ] && v=NA
+        printf 'chr1\t%d\t%d\tcg%d\t%s\t%s\n' $((1000 + i * 50)) $((1002 + i * 50)) $i "$v" "$smp" \
+            >>"$tmpdir/calls.tsv"
+    done
+    i=$((i + 1))
+done
+n0=$(awk -F'\t' 'NR > 1 && $5 == "0"' "$tmpdir/calls.tsv" | wc -l | tr -d ' ')
+n1=$(awk -F'\t' 'NR > 1 && $5 == "1"' "$tmpdir/calls.tsv" | wc -l | tr -d ' ')
+M="matrix(\"$tmpdir/calls.tsv\", name=\"m\", x=genomic, background=\"#bdbdbd\", rowgroup=\" | \", cluster=none, discrete=TRUE)"
+
+# ---- matrix(discrete=TRUE) + legend(): a KEY of the manual colours, the
+# levels renamed by labels=, and the background colour as a final swatch
+# labelled by missing=. The cells paint the same table the key draws from:
+# one blue fill per 0 cell plus the swatch, one red per 1 cell plus the
+# swatch, and the background grey exactly twice (the band, the swatch).
+"$CINDERPLOT" "region(\"chr1:900-1700\") + $M
+    + scale_fill_manual(values=c(\"0\"=\"#4575b4\", \"1\"=\"#d73027\"),
+                        labels=c(\"0\"=\"Unmethylated\", \"1\"=\"Methylated\"))
+    + legend(missing=\"Missing\", title=\"Call\")" --size 6x4 --editable-svg -o "$tmpdir/key.svg"
+svgnorm "$tmpdir/key.svg"
+for lab in Unmethylated Methylated Missing Call; do
+    [ "$(texts "$tmpdir/key.svg" | grep -cx "$lab")" -eq 1 ] \
+        || { echo "track key does not print \`$lab\` once:" >&2; texts "$tmpdir/key.svg" >&2; exit 1; }
+done
+# the raw level names are not printed anywhere once renamed
+[ "$(texts "$tmpdir/key.svg" | grep -cx -e 0 -e 1)" -eq 0 ] \
+    || { echo "labels= left the raw level names in the key" >&2; exit 1; }
+[ "$(fills "$tmpdir/key.svg" "$BLUE")" -eq $((n0 + 1)) ] \
+    || { echo "blue fills: $(fills "$tmpdir/key.svg" "$BLUE"), wanted $n0 cells + 1 swatch" >&2; exit 1; }
+[ "$(fills "$tmpdir/key.svg" "$RED")" -eq $((n1 + 1)) ] \
+    || { echo "red fills: $(fills "$tmpdir/key.svg" "$RED"), wanted $n1 cells + 1 swatch" >&2; exit 1; }
+[ "$(fills "$tmpdir/key.svg" "$GREY")" -eq 2 ] \
+    || { echo "background grey fills: $(fills "$tmpdir/key.svg" "$GREY"), wanted the band + 1 swatch" >&2; exit 1; }
+# the key's texts come after the swatches, in level order, then the missing row
+[ "$(texts "$tmpdir/key.svg" | grep -x -e Unmethylated -e Methylated -e Missing | tr '\n' ' ')" \
+    = "Unmethylated Methylated Missing " ] \
+    || { echo "key rows out of order" >&2; exit 1; }
+
+# missing=none drops that swatch; unlabelled, the swatch reads NA; without
+# labels= the key prints the levels as the file writes them
+"$CINDERPLOT" "region(\"chr1:900-1700\") + $M + legend(missing=none)" \
+    --size 6x4 --editable-svg -o "$tmpdir/nomiss.svg"
+svgnorm "$tmpdir/nomiss.svg"
+[ "$(fills "$tmpdir/nomiss.svg" "$GREY")" -eq 1 ] \
+    || { echo "missing=none still drew the background swatch" >&2; exit 1; }
+[ "$(texts "$tmpdir/nomiss.svg" | grep -cx -e 0 -e 1)" -eq 2 ] \
+    || { echo "an unrenamed key does not print the levels 0 and 1" >&2; exit 1; }
+"$CINDERPLOT" "region(\"chr1:900-1700\") + $M + legend()" \
+    --size 6x4 --editable-svg -o "$tmpdir/na.svg"
+svgnorm "$tmpdir/na.svg"
+[ "$(texts "$tmpdir/na.svg" | grep -cx NA)" -eq 1 ] \
+    || { echo "the default missing label is not NA" >&2; exit 1; }
+
+# ---- labels= for a level the data does not hold errors, naming it ----------
+if "$CINDERPLOT" "region(\"chr1:900-1700\") + $M
+    + scale_fill_manual(values=c(\"0\"=\"blue\"), labels=c(\"2\"=\"Two\")) + legend()" \
+    -o "$tmpdir/x.pdf" 2>"$tmpdir/err"; then
+    echo "labels= for an absent level was accepted" >&2; exit 1
+fi
+grep -q '`2` is not a level of the key' "$tmpdir/err" \
+    || { echo "unknown-level message does not name the level:" >&2; cat "$tmpdir/err" >&2; exit 1; }
+grep -q 'the data holds `0`, `1`' "$tmpdir/err" \
+    || { echo "unknown-level message does not list the levels:" >&2; cat "$tmpdir/err" >&2; exit 1; }
+
+# ---- legend() with no matrix() track errors -------------------------------
+if "$CINDERPLOT" "region(\"chr1:900-1700\") + interval(\"$tmpdir/calls.tsv\") + legend()" \
+    -o "$tmpdir/x.pdf" 2>"$tmpdir/err"; then
+    echo "legend() without a matrix() track was accepted" >&2; exit 1
+fi
+grep -q 'keys a matrix() track, and there is none' "$tmpdir/err" \
+    || { echo "no-matrix message wrong:" >&2; cat "$tmpdir/err" >&2; exit 1; }
+
+# ---- a placement on the track legend errors and says where it sits --------
+if "$CINDERPLOT" "region(\"chr1:900-1700\") + $M + legend(right_of(\"m\"))" \
+    -o "$tmpdir/x.pdf" 2>"$tmpdir/err"; then
+    echo "right_of() on a track legend was accepted" >&2; exit 1
+fi
+grep -q 'sits in the right margin' "$tmpdir/err" \
+    || { echo "placement message wrong:" >&2; cat "$tmpdir/err" >&2; exit 1; }
+
+# ---- the scale must match the cells, both ways, as heatmap mode insists ----
+if "$CINDERPLOT" "region(\"chr1:900-1700\") + $M + scale_fill_viridis() + legend()" \
+    -o "$tmpdir/x.pdf" 2>"$tmpdir/err"; then
+    echo "a continuous ramp over discrete=TRUE was accepted" >&2; exit 1
+fi
+grep -q 'is a continuous ramp and matrix() `m` is categorical' "$tmpdir/err" \
+    || { echo "ramp-over-codes message wrong:" >&2; cat "$tmpdir/err" >&2; exit 1; }
+if "$CINDERPLOT" "region(\"chr1:900-1700\") + matrix(\"$tmpdir/calls.tsv\", cluster=none)
+    + scale_fill_manual(values=c(\"0\"=\"blue\")) + legend()" -o "$tmpdir/x.pdf" 2>"$tmpdir/err"; then
+    echo "a manual palette over a numeric matrix track was accepted" >&2; exit 1
+fi
+grep -q 'discrete palette, and this matrix() track is numeric' "$tmpdir/err" \
+    || { echo "manual-over-numbers message wrong:" >&2; cat "$tmpdir/err" >&2; exit 1; }
+
+# ---- a continuous matrix track + legend() draws the colourbar: the 64-step
+# strip (64 distinct fills beyond the cells' own) with its 0..1 breaks --------
+"$CINDERPLOT" "region(\"chr1:900-1700\") + matrix(\"$tmpdir/calls.tsv\", name=\"m\", cluster=none)
+    + legend(title=\"beta\")" --size 6x4 --editable-svg -o "$tmpdir/bar.svg"
+svgnorm "$tmpdir/bar.svg"
+for lab in 0.00 0.25 0.50 0.75 1.00 beta; do
+    [ "$(texts "$tmpdir/bar.svg" | grep -cx "$lab")" -eq 1 ] \
+        || { echo "colourbar lacks the break \`$lab\`:" >&2; texts "$tmpdir/bar.svg" >&2; exit 1; }
+done
+ndistinct=$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/bar.svg" | sort -u | wc -l | tr -d ' ')
+[ "$ndistinct" -ge 64 ] \
+    || { echo "colourbar drew $ndistinct distinct fills; a 64-step strip wants at least 64" >&2; exit 1; }
+
+# ---- heatmap mode: the same labels= renames its discrete key (one table,
+# both modes), and an absent level errors there too ---------------------------
+printf 'sample,a,b,c\ns1,0,1,2\ns2,2,0,1\ns3,2,0,0\n' >"$tmpdir/codes.csv"
+"$CINDERPLOT" "$tmpdir/codes.csv + heatmap(name=\"m\", cluster=none, discrete=TRUE)
+    + scale_fill_manual(values=c(\"0\"=\"grey90\"), labels=c(\"0\"=\"WT\", \"1\"=\"HET\", \"2\"=\"HOM\"))
+    + legend(right_of(\"m\"))" --size 4x3 --editable-svg -o "$tmpdir/hm.svg"
+svgnorm "$tmpdir/hm.svg"
+[ "$(texts "$tmpdir/hm.svg" | tr '\n' ' ')" = "WT HET HOM " ] \
+    || { echo "heatmap key with labels= printed: $(texts "$tmpdir/hm.svg" | tr '\n' ' ')" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/codes.csv + heatmap(name=\"m\", cluster=none, discrete=TRUE)
+    + scale_fill_manual(labels=c(\"3\"=\"X\")) + legend(right_of(\"m\"))" \
+    --size 4x3 -o "$tmpdir/x.pdf" 2>"$tmpdir/err"; then
+    echo "heatmap labels= for an absent level was accepted" >&2; exit 1
+fi
+grep -q '`3` is not a level of the key' "$tmpdir/err" \
+    || { echo "heatmap unknown-level message wrong:" >&2; cat "$tmpdir/err" >&2; exit 1; }
+
+# ---- and the heatmap key/colourbar without labels= are what they were: the
+# level names 0 1 2 as three swatches, and a 64-step bar for a numeric matrix
+"$CINDERPLOT" "$tmpdir/codes.csv + heatmap(name=\"m\", cluster=none, discrete=TRUE)
+    + legend(right_of(\"m\"))" --size 4x3 --editable-svg -o "$tmpdir/hmkey.svg"
+svgnorm "$tmpdir/hmkey.svg"
+[ "$(texts "$tmpdir/hmkey.svg" | tr '\n' ' ')" = "0 1 2 " ] \
+    || { echo "heatmap key printed: $(texts "$tmpdir/hmkey.svg" | tr '\n' ' ')" >&2; exit 1; }
+[ "$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/hmkey.svg" | wc -l | tr -d ' ')" -eq 12 ] \
+    || { echo "heatmap key: wanted 9 cells + 3 swatches" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/codes.csv + heatmap(name=\"m\", cluster=none) + legend(right_of(\"m\"))" \
+    --size 4x3 --editable-svg -o "$tmpdir/hmbar.svg"
+svgnorm "$tmpdir/hmbar.svg"
+[ "$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/hmbar.svg" | wc -l | tr -d ' ')" -eq 73 ] \
+    || { echo "heatmap colourbar: wanted 9 cells + 64 strips" >&2; exit 1; }
+
 echo "all tests passed"
