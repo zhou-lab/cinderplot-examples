@@ -4302,18 +4302,23 @@ svgnorm "$tmpdir/hmbar.svg"
 # at any height. A larger gap moves each strip's baseline up (the lane shrinks
 # from both ends); gap=0 removes it; a negative gap errors.
 printf 'chrom\tbeg\tend\tbeta\tsample\n' >"$tmpdir/sg.tsv"
-for x in 100 200 300 400 500; do printf 'chr1\t%s\t%s\t0.5\ts1\nchr1\t%s\t%s\t0.5\ts2\n' $x $((x+2)) $x $((x+2)) >>"$tmpdir/sg.tsv"; done
-base_y() {   # y of the FIRST baseline (strip 1's low end) in the SVG
+v=0; for x in 100 200 300 400 500; do v=$((1-v)); printf 'chr1\t%s\t%s\t%s\ts1\nchr1\t%s\t%s\t%s\ts2\n' $x $((x+2)) $v $x $((x+2)) $v >>"$tmpdir/sg.tsv"; done
+extent() {   # vertical extent of the first trace polyline: a bigger gap shrinks every lane
     "$CINDERPLOT" "region(\"chr1:0-600\") + signal(\"$tmpdir/sg.tsv\"$1)" \
         --size 5x3 --editable-svg -o "$tmpdir/sg.svg"
-    svgnorm "$tmpdir/sg.svg"
-    grep 'stroke="rgb(89.8%, 89.8%, 89.8%)"' "$tmpdir/sg.svg" | head -1 \
-        | sed 's/.*d="M [0-9.]* \([0-9.]*\) .*/\1/'
+    python3 - "$tmpdir/sg.svg" <<'PY2'
+import re, sys
+svg = open(sys.argv[1]).read()
+m = re.search(r'<path[^>]*stroke-linejoin="round"[^>]*d="([^"]*)"', svg)
+ys = [float(y) for _, y in re.findall(r'[ML] ([-\d.]+) ([-\d.]+)', m.group(1))]
+print(round(max(ys) - min(ys), 3))
+PY2
 }
-y0=$(base_y ", gap=0"); y2=$(base_y ""); y8=$(base_y ", gap=8")
-# a bigger gap lifts the baseline (smaller y in SVG space): y8 < y2 < y0
-awk -v a="$y0" -v b="$y2" -v c="$y8" 'BEGIN{exit !(c < b && b < a)}' \
-    || { echo "signal gap= did not move the strip baselines: gap0=$y0 gap2=$y2 gap8=$y8" >&2; exit 1; }
+e0=$(extent ", gap=0"); e2=$(extent ""); e8=$(extent ", gap=8")
+# the two-sample zigzag spans its lane, so the lane's height IS the extent:
+# e8 < e2 < e0
+awk -v a="$e0" -v b="$e2" -v c="$e8" 'BEGIN{exit !(c < b && b < a)}' \
+    || { echo "signal gap= did not shrink the lanes: gap0=$e0 gap2=$e2 gap8=$e8" >&2; exit 1; }
 if "$CINDERPLOT" "region(\"chr1:0-600\") + signal(\"$tmpdir/sg.tsv\", gap=-1)" \
         -o "$tmpdir/sge.pdf" 2>"$tmpdir/err"; then
     echo "signal(gap=-1) unexpectedly succeeded" >&2; exit 1
