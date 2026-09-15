@@ -4065,8 +4065,10 @@ assert len(pinned) == 2 and len(free) == 2, (len(pinned), len(free))
 a, b = pinned
 # strip A is the upper one; the strips are equal bands, so the offset between
 # them is the same at every vertex once both share the 0..1 range
-offs = [round(bp[1] - ap[1], 3) for ap, bp in zip(a[:5], b[:5])]
-assert len(set(offs)) == 1, offs
+offs = [bp[1] - ap[1] for ap, bp in zip(a[:5], b[:5])]
+# equal to within SVG rounding: the lane arithmetic (pad + gap) lands one
+# vertex a few thousandths off the others, which is not a geometry difference
+assert max(offs) - min(offs) < 0.02, offs
 assert offs[0] > 0, offs
 # the outlier: above A's band top, which is where B's 0.6 sits minus the offset
 assert a[5][1] < b[5][1] - offs[0] - 1, (a[5], b[5])
@@ -4294,5 +4296,28 @@ svgnorm "$tmpdir/hmkey.svg"
 svgnorm "$tmpdir/hmbar.svg"
 [ "$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/hmbar.svg" | wc -l | tr -d ' ')" -eq 73 ] \
     || { echo "heatmap colourbar: wanted 9 cells + 64 strips" >&2; exit 1; }
+
+# ---- signal(gap=): a fixed blank between strips ------------------------------
+# The lane pad is proportional; the gap is fixed points, so it stays a hairline
+# at any height. A larger gap moves each strip's baseline up (the lane shrinks
+# from both ends); gap=0 removes it; a negative gap errors.
+printf 'chrom\tbeg\tend\tbeta\tsample\n' >"$tmpdir/sg.tsv"
+for x in 100 200 300 400 500; do printf 'chr1\t%s\t%s\t0.5\ts1\nchr1\t%s\t%s\t0.5\ts2\n' $x $((x+2)) $x $((x+2)) >>"$tmpdir/sg.tsv"; done
+base_y() {   # y of the FIRST baseline (strip 1's low end) in the SVG
+    "$CINDERPLOT" "region(\"chr1:0-600\") + signal(\"$tmpdir/sg.tsv\"$1)" \
+        --size 5x3 --editable-svg -o "$tmpdir/sg.svg"
+    svgnorm "$tmpdir/sg.svg"
+    grep 'stroke="rgb(89.8%, 89.8%, 89.8%)"' "$tmpdir/sg.svg" | head -1 \
+        | sed 's/.*d="M [0-9.]* \([0-9.]*\) .*/\1/'
+}
+y0=$(base_y ", gap=0"); y2=$(base_y ""); y8=$(base_y ", gap=8")
+# a bigger gap lifts the baseline (smaller y in SVG space): y8 < y2 < y0
+awk -v a="$y0" -v b="$y2" -v c="$y8" 'BEGIN{exit !(c < b && b < a)}' \
+    || { echo "signal gap= did not move the strip baselines: gap0=$y0 gap2=$y2 gap8=$y8" >&2; exit 1; }
+if "$CINDERPLOT" "region(\"chr1:0-600\") + signal(\"$tmpdir/sg.tsv\", gap=-1)" \
+        -o "$tmpdir/sge.pdf" 2>"$tmpdir/err"; then
+    echo "signal(gap=-1) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'gap= expects the blank space between strips' "$tmpdir/err" >/dev/null
 
 echo "all tests passed"
