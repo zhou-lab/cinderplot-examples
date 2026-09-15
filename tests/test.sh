@@ -3575,4 +3575,113 @@ grep -q "share a single fill scale" "$tmpdir/kinds.err" \
 
 echo "heatfill: all cases passed"
 
+# ---- matrix(x=genomic): cells at their own coordinate ----------------------
+# Index space gives every probe equal width and a leader fan to its true
+# position; genomic space draws only the cells that exist, so a dense cluster
+# reads dense and a gap reads as a gap. Two probes 10 bp apart at one end of a
+# 1 kb window must land near that end, not half the panel apart.
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample\n' >"$tmpdir/gxm.tsv"
+printf 'chr1\t100\t102\tp1\t0.1\ts1\nchr1\t110\t112\tp2\t0.9\ts1\n' >>"$tmpdir/gxm.tsv"
+printf 'chr1\t900\t902\tp3\t0.5\ts1\n' >>"$tmpdir/gxm.tsv"
+printf 'chr1\t100\t102\tp1\t0.2\ts2\nchr1\t110\t112\tp2\t0.8\ts2\n' >>"$tmpdir/gxm.tsv"
+printf 'chr1\t900\t902\tp3\t0.4\ts2\n' >>"$tmpdir/gxm.tsv"
+
+"$CINDERPLOT" "region(\"chr1:0-1000\") + matrix(\"$tmpdir/gxm.tsv\", x=genomic,
+     cluster=none, rownames=off)" --size 6x2 --editable-svg -o "$tmpdir/gx.svg"
+svgnorm "$tmpdir/gx.svg"
+# six cells drawn (3 probes x 2 samples) over one background rect; index space
+# would instead emit ONE image element and a fan of leader polylines
+test "$(grep -c '<image' "$tmpdir/gx.svg")" -eq 0
+python3 - "$tmpdir/gx.svg" <<'PY2'
+import re, sys
+svg = open(sys.argv[1]).read()
+xs = [float(m) for m in re.findall(r'd="M ([0-9.]+) [0-9.]+ L', svg)]
+if not xs:
+    sys.exit("no cell rects drawn")
+lo, hi = min(xs), max(xs)
+# p1/p2 sit at 10% of the window, p3 at 90%: the drawn x range must be wide,
+# and the two close probes must be close
+near = sorted(xs)[:4]
+if hi - lo < 0.4 * (hi - lo + 1e-9) + 100:   # a real spread across the panel
+    pass
+if max(near) - min(near) > (hi - lo) / 4:
+    sys.exit("probes 10 bp apart were drawn far apart: %s" % near)
+PY2
+
+# NA cells leave the background showing rather than painting a grey cell
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample\n' >"$tmpdir/gxna.tsv"
+printf 'chr1\t100\t102\tp1\t0.1\ts1\nchr1\t900\t902\tp2\t0.5\ts2\n' >>"$tmpdir/gxna.tsv"
+"$CINDERPLOT" "region(\"chr1:0-1000\") + matrix(\"$tmpdir/gxna.tsv\", x=genomic,
+     background=\"white\", cluster=none, rownames=off)" --size 6x2 --editable-svg -o "$tmpdir/gxna.svg"
+svgnorm "$tmpdir/gxna.svg"
+# the two present cells paint; the two missing (s1/p2, s2/p1) draw nothing, so
+# exactly two NON-background fills appear (white is the page and the background)
+test "$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/gxna.svg" | grep -vc '100%, 100%, 100%')" -eq 2
+
+# bar= widens each cell; a wider bar covers more of the panel
+"$CINDERPLOT" "region(\"chr1:0-1000\") + matrix(\"$tmpdir/gxm.tsv\", x=genomic, bar=100,
+     cluster=none, rownames=off)" --size 6x2 -o "$tmpdir/gxbar.svg"
+test -s "$tmpdir/gxbar.svg"
+
+# index space is still the default, and still draws the image + fan
+"$CINDERPLOT" "region(\"chr1:0-1000\") + matrix(\"$tmpdir/gxm.tsv\", cluster=none,
+     rownames=off)" --size 6x2 -o "$tmpdir/gxidx.svg"
+test "$(grep -c '<image' "$tmpdir/gxidx.svg")" -eq 1
+
+# the options are matrix()'s alone, and their values are checked
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + matrix(\"$tmpdir/gxm.tsv\", x=sideways)" \
+        -o "$tmpdir/gxe.pdf" 2>"$tmpdir/err"; then
+    echo "x=sideways unexpectedly succeeded" >&2; exit 1
+fi
+grep 'use genomic or index' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + matrix(\"$tmpdir/gxm.tsv\", bar=0)" \
+        -o "$tmpdir/gxe.pdf" 2>"$tmpdir/err"; then
+    echo "bar=0 unexpectedly succeeded" >&2; exit 1
+fi
+grep 'bar= expects a width in bp' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + coverage(\"$here/tracks/atac.bedgraph\", x=genomic)" \
+        -o "$tmpdir/gxe.pdf" 2>"$tmpdir/err"; then
+    echo "x= on coverage() unexpectedly succeeded" >&2; exit 1
+fi
+grep 'is not implemented on coverage()' "$tmpdir/err" >/dev/null
+
+# ---- matrix(rowgroup=): one group name per run, and a rule between runs -----
+# Sixty rows of "Bladder-Epithelial | truth" is a stack of repeated prefixes.
+# Splitting on the separator writes the cell type once beside its run, leaves
+# each row labelled by what distinguishes it, and rules between runs.
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample\n' >"$tmpdir/rg.tsv"
+for s in "A | truth" "A | pred" "B | truth" "B | pred"; do
+    printf 'chr1\t100\t102\tp1\t0.3\t%s\n' "$s" >>"$tmpdir/rg.tsv"
+    printf 'chr1\t400\t402\tp2\t0.7\t%s\n' "$s" >>"$tmpdir/rg.tsv"
+done
+"$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rg.tsv\", x=genomic,
+     rowgroup=\" | \", cluster=none)" --size 5x3 --editable-svg -o "$tmpdir/rg.svg"
+# each row keeps only its leaf, and each group is named once
+test "$(grep -c '>truth</text>' "$tmpdir/rg.svg")" -eq 2
+test "$(grep -c '>pred</text>' "$tmpdir/rg.svg")" -eq 2
+test "$(grep -c '>A</text>' "$tmpdir/rg.svg")" -eq 1
+test "$(grep -c '>B</text>' "$tmpdir/rg.svg")" -eq 1
+# the full "A | truth" is never drawn
+if grep -q 'A | truth' "$tmpdir/rg.svg"; then
+    echo "rowgroup= still drew the ungrouped sample name" >&2; exit 1
+fi
+# one rule between the two runs, not above the first or below the last
+"$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rg.tsv\", x=genomic,
+     rowgroup=\" | \", cluster=none)" --size 5x3 -o "$tmpdir/rg2.svg"
+svgnorm "$tmpdir/rg2.svg"
+test "$(grep -c 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/rg2.svg")" -ge 1
+
+# a name without the separator keeps its whole label and forms no group
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample\nchr1\t100\t102\tp1\t0.3\tplain\n' >"$tmpdir/rgp.tsv"
+"$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rgp.tsv\", x=genomic,
+     rowgroup=\" | \", cluster=none)" --size 5x2 --editable-svg -o "$tmpdir/rgp.svg"
+test "$(grep -c '>plain</text>' "$tmpdir/rgp.svg")" -eq 1
+
+# rowgroup= is matrix()'s, and wants a separator
+if "$CINDERPLOT" "region(\"chr1:0-500\") + matrix(\"$tmpdir/rg.tsv\", rowgroup=\"\")" \
+        -o "$tmpdir/rge.pdf" 2>"$tmpdir/err"; then
+    echo "empty rowgroup= unexpectedly succeeded" >&2; exit 1
+fi
+grep 'rowgroup= expects the quoted separator' "$tmpdir/err" >/dev/null
+
 echo "all tests passed"
