@@ -3921,4 +3921,222 @@ grep 'option `rowcolour` is not valid for interval(); supported: name=' "$tmpdir
 
 echo "all tests passed"
 
+
+# ==== 2026-09-15: signal() track, and the loess extraction ==============
+
+svgnorm() { python3 "$here/tests/svgnorm.py" "$@"; }
+# a signal() polyline is the one round-joined stroke in these figures (grid
+# lines and baselines are single G_LINE segments, mitre-joined)
+polylines() { grep -c 'stroke-linejoin="round"' "$1"; }
+# vertex count of the k-th polyline: one M plus the L's
+vertices() { grep 'stroke-linejoin="round"' "$1" | sed -n "${2}p" | grep -o ' L ' | wc -l | tr -d ' '; }
+
+# ---- signal(): one strip per sample, one line per series ------------------
+# The long shape matrix() reads (`chrom beg end value sample`) plus a
+# `series` column; `beta` heads the value column just as well.
+printf 'chrom\tbeg\tend\tbeta\tsample\tseries\n' >"$tmpdir/sig.tsv"
+for s in "Neuron | truth" "Neuron | pred" "Liver | truth"; do
+    for ser in a b; do
+        i=0
+        while [ $i -lt 10 ]; do
+            v=$(( (i * 7 + ${#ser} * 3) % 10 ))
+            printf 'chr1\t%d\t%d\t0.%d\t%s\t%s\n' $((100 + i * 80)) $((102 + i * 80)) $v "$s" "$ser" >>"$tmpdir/sig.tsv"
+            i=$((i + 1))
+        done
+    done
+done
+# three strips x two series: six raw polylines, each through its 10 points
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\")" \
+    --size 5x3 --editable-svg -o "$tmpdir/raw.svg"
+svgnorm "$tmpdir/raw.svg"
+test "$(polylines "$tmpdir/raw.svg")" -eq 6
+test "$(vertices "$tmpdir/raw.svg" 1)" -eq 9
+# each strip is labelled once in the gutter, by its whole sample name
+test "$(grep -c '>Neuron | truth</text>' "$tmpdir/raw.svg")" -eq 1
+test "$(grep -c '>Liver | truth</text>' "$tmpdir/raw.svg")" -eq 1
+
+# smooth= replaces each raw line with its loess at the fit's resolution (200
+# points; cairo folds a vertex whose segment continues the previous one at
+# the same fixed-point slope, so the SVG may carry a few fewer); smooth=0 is
+# the raw line again
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", smooth=0.5)" \
+    --size 5x3 --editable-svg -o "$tmpdir/sm.svg"
+svgnorm "$tmpdir/sm.svg"
+test "$(polylines "$tmpdir/sm.svg")" -eq 6
+test "$(vertices "$tmpdir/sm.svg" 1)" -ge 190 && test "$(vertices "$tmpdir/sm.svg" 1)" -le 199
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", smooth=0)" \
+    --size 5x3 --editable-svg -o "$tmpdir/sm0.svg"
+svgnorm "$tmpdir/sm0.svg"
+cmp -s "$tmpdir/raw.svg" "$tmpdir/sm0.svg"
+
+# colour=c(name=...) maps a named series; the unnamed one keeps its hue.
+# Three strips: three red strokes, and nothing red without the mapping.
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", colour=c(\"a\"=\"#ff0000\"))" \
+    --size 5x3 --editable-svg -o "$tmpdir/col.svg"
+svgnorm "$tmpdir/col.svg"
+test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/col.svg")" -eq 3
+test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/raw.svg")" -eq 0
+# a positional list, one per series in file order, and a single colour for all
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", colour=c(\"#ff0000\", \"#0000ff\"))" \
+    --size 5x3 --editable-svg -o "$tmpdir/colp.svg"
+svgnorm "$tmpdir/colp.svg"
+test "$(grep -c 'stroke="rgb(0%, 0%, 100%)"' "$tmpdir/colp.svg")" -eq 3
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", colour=\"#00ff00\")" \
+    --size 5x3 --editable-svg -o "$tmpdir/col1.svg"
+svgnorm "$tmpdir/col1.svg"
+test "$(grep -c 'stroke="rgb(0%, 100%, 0%)"' "$tmpdir/col1.svg")" -eq 6
+
+# a series named in colour= but absent from the data is an error naming it
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", colour=c(\"a\"=\"red\", \"zz\"=\"blue\"))" \
+        -o "$tmpdir/err.pdf" 2>"$tmpdir/err"; then
+    echo "unknown series in colour= unexpectedly succeeded" >&2; exit 1
+fi
+grep 'series `zz` is not in .*sig.tsv`; its series are `a`, `b`' "$tmpdir/err" >/dev/null
+# a positional list shorter than the series is an error too, not a grey tail
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", colour=c(\"red\"))" \
+        -o "$tmpdir/err.pdf" 2>"$tmpdir/err"; then
+    echo "short positional colour= unexpectedly succeeded" >&2; exit 1
+fi
+grep 'gives 1 colours; .*sig.tsv` has 2 series' "$tmpdir/err" >/dev/null
+
+# points=on draws the raw points behind the lines: ten per series per strip,
+# in the series colour, translucent; none without it
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", points=on, colour=c(\"a\"=\"#ff0000\"))" \
+    --size 5x3 --editable-svg -o "$tmpdir/pts.svg"
+svgnorm "$tmpdir/pts.svg"
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/pts.svg")" -eq 30
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/col.svg")" -eq 0
+test "$(polylines "$tmpdir/pts.svg")" -eq 6
+
+# rowgroup= names each group once beside its run and drops the prefix from
+# the strip labels; rowcolour= colours the name, as on matrix()
+printf 'group\tcolour\nNeuron\t#0000ff\n' >"$tmpdir/cols.tsv"
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", rowgroup=\" | \", rowcolour=\"$tmpdir/cols.tsv\")" \
+    --size 5x3 --editable-svg -o "$tmpdir/grp.svg"
+test "$(grep -c '>Neuron</text>' "$tmpdir/grp.svg")" -eq 1
+test "$(grep -c '>Liver</text>' "$tmpdir/grp.svg")" -eq 1
+test "$(grep -c '>truth</text>' "$tmpdir/grp.svg")" -eq 2
+test "$(grep -c 'Neuron | truth' "$tmpdir/grp.svg")" -eq 0
+grep -q 'fill="#0000ff">Neuron</text>' "$tmpdir/grp.svg"
+grep -q 'fill="#000000">Liver</text>' "$tmpdir/grp.svg"
+
+# under regions() each window draws only its rows: chr2 carries six points
+# per series, chr1 ten, and the second window's lines are the shorter ones.
+# (Values that zigzag, not a ramp: cairo folds collinear vertices into one
+# segment, and a ramp would count as fewer.)
+{ printf 'chrom\tbeg\tend\tvalue\tsample\tseries\n'
+  i=0; while [ $i -lt 10 ]; do printf 'chr1\t%d\t%d\t0.%d\tS\ta\n' $((100 + i * 80)) $((102 + i * 80)) $(( (i * 7) % 10 )); i=$((i + 1)); done
+  i=0; while [ $i -lt 6 ]; do printf 'chr2\t%d\t%d\t0.%d\tS\ta\n' $((100 + i * 80)) $((102 + i * 80)) $(( (i * 7) % 10 )); i=$((i + 1)); done
+} >"$tmpdir/two.tsv"
+printf 'chr1\t0\t1000\tfirst\nchr2\t0\t1000\tsecond\n' >"$tmpdir/wins.bed"
+"$CINDERPLOT" "regions(\"$tmpdir/wins.bed\") + signal(\"$tmpdir/two.tsv\")" \
+    --size 6x2 --editable-svg -o "$tmpdir/win.svg"
+svgnorm "$tmpdir/win.svg"
+test "$(polylines "$tmpdir/win.svg")" -eq 2
+test "$(vertices "$tmpdir/win.svg" 1)" -eq 9
+test "$(vertices "$tmpdir/win.svg" 2)" -eq 5
+
+# ylim= pins every strip to the same range: strip A carries an outlier of 5,
+# strip B a 0.6 in its place, and the two strips otherwise agree. Pinned to
+# 0..1, each of A's vertices sits exactly where B's does (offset by one strip);
+# left to its own 0..5 range it would not. The outlier is clipped, not
+# rescaled, so it lands outside its strip's clip band.
+{ printf 'chrom\tbeg\tend\tvalue\tsample\n'
+  for pv in 100:0.1 200:0.4 300:0.2 400:0.5 500:0.3; do
+      p=${pv%%:*}; v=${pv#*:}
+      printf 'chr1\t%d\t%d\t%s\tA\nchr1\t%d\t%d\t%s\tB\n' $p $((p + 2)) $v $p $((p + 2)) $v
+  done
+  printf 'chr1\t600\t602\t5\tA\nchr1\t600\t602\t0.6\tB\n'
+} >"$tmpdir/yl.tsv"
+"$CINDERPLOT" "region(\"chr1:0-700\") + signal(\"$tmpdir/yl.tsv\", ylim=c(0,1))" \
+    --size 5x3 --editable-svg -o "$tmpdir/yl.svg"
+"$CINDERPLOT" "region(\"chr1:0-700\") + signal(\"$tmpdir/yl.tsv\")" \
+    --size 5x3 --editable-svg -o "$tmpdir/yl0.svg"
+python3 - "$tmpdir/yl.svg" "$tmpdir/yl0.svg" <<'PY'
+import re, sys
+def lines(path):
+    out = []
+    for m in re.finditer(r'<path[^>]*stroke-linejoin="round"[^>]*d="([^"]*)"', open(path).read()):
+        pts = re.findall(r'[ML] ([-\d.]+) ([-\d.]+)', m.group(1))
+        out.append([(float(x), float(y)) for x, y in pts])
+    return out
+pinned, free = lines(sys.argv[1]), lines(sys.argv[2])
+assert len(pinned) == 2 and len(free) == 2, (len(pinned), len(free))
+a, b = pinned
+# strip A is the upper one; the strips are equal bands, so the offset between
+# them is the same at every vertex once both share the 0..1 range
+offs = [round(bp[1] - ap[1], 3) for ap, bp in zip(a[:5], b[:5])]
+assert len(set(offs)) == 1, offs
+assert offs[0] > 0, offs
+# the outlier: above A's band top, which is where B's 0.6 sits minus the offset
+assert a[5][1] < b[5][1] - offs[0] - 1, (a[5], b[5])
+# without ylim= strip A is scaled to 0..5 and the offsets no longer agree
+fa, fb = free
+foffs = [round(bp[1] - ap[1], 3) for ap, bp in zip(fa[:5], fb[:5])]
+assert len(set(foffs)) > 1, foffs
+PY
+
+# options that are not signal()'s, and values that are not, name the menu
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", cluster=samples)" \
+        -o "$tmpdir/err.pdf" 2>"$tmpdir/err"; then
+    echo "signal(cluster=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'option `cluster` is not valid for signal(); supported: name=, height=, data=, rowgroup=, rowcolour=, smooth=, points=, colour=c(...), ylim=c(lo, hi), linewidth=' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + coverage(\"$tmpdir/sig.tsv\", smooth=0.3)" \
+        -o "$tmpdir/err.pdf" 2>"$tmpdir/err"; then
+    echo "coverage(smooth=) unexpectedly succeeded" >&2; exit 1
+fi
+grep 'option `smooth` is not valid for coverage()' "$tmpdir/err" >/dev/null
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", smooth=1.5)" \
+        -o "$tmpdir/err.pdf" 2>"$tmpdir/err"; then
+    echo "smooth=1.5 unexpectedly succeeded" >&2; exit 1
+fi
+grep 'smooth= expects a loess span in (0, 1], or 0' "$tmpdir/err" >/dev/null
+# too few points for the fit: the error names the series, the window and the way out
+if "$CINDERPLOT" "region(\"chr1:0-250\") + signal(\"$tmpdir/sig.tsv\", smooth=0.5)" \
+        -o "$tmpdir/err.pdf" 2>"$tmpdir/err"; then
+    echo "loess on 2 points unexpectedly succeeded" >&2; exit 1
+fi
+grep 'signal(smooth=0.5): series `[ab]` of strip `Neuron | truth` has 2 points in chr1:0-250 and loess needs 4; use smooth=0' "$tmpdir/err" >/dev/null
+# the input shape is named when a column is missing
+printf 'chrom\tbeg\tend\tbeta\n' >"$tmpdir/nosamp.tsv"
+printf 'chr1\t100\t102\t0.5\n' >>"$tmpdir/nosamp.tsv"
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/nosamp.tsv\")" \
+        -o "$tmpdir/err.pdf" 2>"$tmpdir/err"; then
+    echo "signal without a sample column unexpectedly succeeded" >&2; exit 1
+fi
+grep 'needs a sample column' "$tmpdir/err" >/dev/null
+# linewidth= scales the stroke; size= is the same option
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", linewidth=2)" \
+    --size 5x3 --editable-svg -o "$tmpdir/lw.svg"
+svgnorm "$tmpdir/lw.svg"
+test "$(grep 'stroke-linejoin="round"' "$tmpdir/lw.svg" | grep -c 'stroke-width="4.267914"')" -eq 6
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sig.tsv\", size=2)" \
+    --size 5x3 --editable-svg -o "$tmpdir/lw2.svg"
+svgnorm "$tmpdir/lw2.svg"
+cmp -s "$tmpdir/lw.svg" "$tmpdir/lw2.svg"
+
+# ---- the loess extraction: geom_smooth() renders as it did ----------------
+# cp_loess() (smooth.c) replaced the inline fit in render.c; the curve must be
+# the same one, to the pixel, against the binary that predates the move.
+# Rasterised, because cairo stamps a creation time inside a compressed PDF
+# stream and the PDFs themselves cannot be compared.
+REF=${CINDERPLOT_REF:-/home/zhouw3/repo/cinderplot/cinderplot}
+[ -x "$REF" ] || { echo "no reference binary at $REF (set CINDERPLOT_REF)" >&2; exit 1; }
+printf 'x,y,g\n' >"$tmpdir/sm.csv"
+i=1; while [ "$i" -le 80 ]; do
+    printf '%s,%s,a\n%s,%s,b\n' "$i" "$((i % 7))" "$i" "$((i % 5 + 3))" >>"$tmpdir/sm.csv"
+    i=$((i + 1))
+done
+for spec in "aes(x,y) + geom_point() + geom_smooth(se=FALSE)" \
+            "aes(x,y,colour=g) + geom_smooth(se=FALSE, span=0.2)"; do
+    "$CINDERPLOT" "$tmpdir/sm.csv + $spec" --size 5x4 -o "$tmpdir/new.pdf"
+    "$REF" "$tmpdir/sm.csv + $spec" --size 5x4 -o "$tmpdir/ref.pdf"
+    pdftoppm -r 100 -png -singlefile "$tmpdir/new.pdf" "$tmpdir/new"
+    pdftoppm -r 100 -png -singlefile "$tmpdir/ref.pdf" "$tmpdir/ref"
+    cmp -s "$tmpdir/new.png" "$tmpdir/ref.png" || { echo "geom_smooth differs from $REF for: $spec" >&2; exit 1; }
+done
+
+echo "all tests passed"
+
 echo "all tests passed"
