@@ -3919,7 +3919,6 @@ if "$CINDERPLOT" "region(\"chr1:0-1000\") + interval(\"$tmpdir/dense.bed\", rowc
 fi
 grep 'option `rowcolour` is not valid for interval(); supported: name=' "$tmpdir/err" >/dev/null
 
-echo "all tests passed"
 
 
 # ==== 2026-09-15: signal() track, and the loess extraction ==============
@@ -4124,7 +4123,16 @@ cmp -s "$tmpdir/lw.svg" "$tmpdir/lw2.svg"
 # Rasterised, because cairo stamps a creation time inside a compressed PDF
 # stream and the PDFs themselves cannot be compared.
 REF=${CINDERPLOT_REF:-/home/zhouw3/repo/cinderplot/cinderplot}
-[ -x "$REF" ] || { echo "no reference binary at $REF (set CINDERPLOT_REF)" >&2; exit 1; }
+# A reference build exists on a maintainer's machine, not on a CI runner; a
+# missing one is a SKIP that says so, not a failure -- and it says so loudly,
+# because a silent skip is how a case stops being a test.
+if [ -x "$REF" ] && [ "$REF" != "$CINDERPLOT" ]; then
+loess_ref=1
+else
+loess_ref=0
+echo "SKIP loess byte-identity: no reference binary at $REF (set CINDERPLOT_REF)" >&2
+fi
+if [ "$loess_ref" -eq 1 ]; then
 printf 'x,y,g\n' >"$tmpdir/sm.csv"
 i=1; while [ "$i" -le 80 ]; do
     printf '%s,%s,a\n%s,%s,b\n' "$i" "$((i % 7))" "$i" "$((i % 5 + 3))" >>"$tmpdir/sm.csv"
@@ -4139,8 +4147,8 @@ for spec in "aes(x,y) + geom_point() + geom_smooth(se=FALSE)" \
     cmp -s "$tmpdir/new.png" "$tmpdir/ref.png" || { echo "geom_smooth differs from $REF for: $spec" >&2; exit 1; }
 done
 
-echo "all tests passed"
 
+fi
 
 # ==== 2026-09-15: track-mode legend, matrix(discrete=TRUE), labels= ========
 
