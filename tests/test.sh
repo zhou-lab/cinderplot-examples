@@ -3351,7 +3351,7 @@ if "$CINDERPLOT" "$tmpdir/fgbig.csv + aes(x, y) + geom_point() + facet_grid(g ~ 
 fi
 grep 'a 70 x 3 layout' "$tmpdir/err" >/dev/null
 
-echo "facet_grid tests passed"
+echo "facet_grid: ok"
 
 
 # ==== 2026-09-11: a discrete heatmap fill ===================================
@@ -3571,7 +3571,7 @@ fi
 grep -q "share a single fill scale" "$tmpdir/kinds.err" \
     || { echo "the mixed-kind error is unclear:" >&2; cat "$tmpdir/kinds.err" >&2; exit 1; }
 
-echo "heatfill: all cases passed"
+echo "heatfill: ok"
 
 # ---- matrix(x=genomic): cells at their own coordinate ----------------------
 # Index space gives every probe equal width and a leader fan to its true
@@ -3807,7 +3807,7 @@ if "$CINDERPLOT" "$tmpdir/grp.csv + aes(x, y) + geom_smooth(se=FALSE, size=0)" \
 fi
 grep 'geom_smooth(size=) expects a number > 0' "$tmpdir/err" >/dev/null
 
-echo "grammar.sh: all tests passed"
+echo "grammar.sh: ok"
 
 
 # ==== 2026-09-15: interval(labels=) and rowcolour= ==========================
@@ -4489,7 +4489,7 @@ else
     echo "SKIP grammar byte-identity: no distinct reference binary at $REF" >&2
 fi
 
-echo "fonts.sh: all cases passed"
+echo "fonts.sh: ok"
 
 
 # ==== 2026-09-16: sample-metadata annotation bands, shrink-to-fit =====
@@ -4660,7 +4660,7 @@ awk "BEGIN{exit !($fs < 8.8 && $fs >= 5.5)}"
 # the name that cannot fit even at the floor is dropped
 test "$(fontsize "$tmpdir/genes.svg" WAYTOOLONGGENENAMETODRAWEVENATTHEFLOORSIZEXXXXXXXX)" = ABSENT
 
-echo "meta.sh: all tests passed"
+echo "meta.sh: ok"
 
 # ===========================================================================
 # 2026-09-16: the metadata-band track's committed data (methylation betas grouped
@@ -4674,6 +4674,6 @@ echo "meta.sh: all tests passed"
     -o "$tmpdir/gc_meta.svg"
 test -s "$tmpdir/gc_meta.svg"
 grep -q '<image' "$tmpdir/gc_meta.svg" || { echo "metabands data: heatmap raster missing" >&2; exit 1; }
-echo "gallery-data.sh: all tests passed"
+echo "gallery-data.sh: ok"
 
 echo "all tests passed"
