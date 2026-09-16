@@ -4674,6 +4674,90 @@ echo "meta.sh: ok"
     -o "$tmpdir/gc_meta.svg"
 test -s "$tmpdir/gc_meta.svg"
 grep -q '<image' "$tmpdir/gc_meta.svg" || { echo "metabands data: heatmap raster missing" >&2; exit 1; }
+# the condition band: one rect per sample in each colour (38 Normal, 38 Tumour);
+# without rowmeta=/rowbar= the same spec draws zero of either
+svgnorm "$tmpdir/gc_meta.svg"
+test "$(grep -c 'fill="rgb(27.058824%, 45.882353%, 70.588235%)"' "$tmpdir/gc_meta.svg")" -eq 38   # #4575b4 Normal
+test "$(grep -c 'fill="rgb(84.313725%, 18.823529%, 15.294118%)"' "$tmpdir/gc_meta.svg")" -eq 38   # #d73027 Tumour
 echo "gallery-data.sh: ok"
+
+# ===========================================================================
+# 2026-09-16 review: the row gutter's bands are gutter, not labels.
+# Pre-fix, both the rowgroup band and the metadata bands were gated on the
+# "write row labels" flag, which also encodes "left-most window", so:
+#   - rowbar=on + rownames=off reserved the strip and drew nothing in it;
+#   - regions() with N windows stamped the metadata bands N times.
+# And fit_height applied its 5.5pt floor even when the requested size was
+# smaller, so --font-size 5 could ENLARGE a cramped row label past 4.1pt.
+# ===========================================================================
+printf 'chrom\tbeg\tend\tProbe_ID\tbeta\tsample_name\n' >"$tmpdir/gt.tsv"
+for s in "A | s1" "A | s2" "B | s3"; do
+    printf 'chr1\t100\t102\tp1\t0.2\t%s\nchr1\t150\t152\tp2\t0.8\t%s\n' "$s" "$s" >>"$tmpdir/gt.tsv"
+done
+printf 'group\tcolour\nA\t#ff0000\nB\t#0000ff\n' >"$tmpdir/gt_rc.tsv"
+# 1. the band is drawn with row names hidden (pre-fix: 0 red rects)
+"$CINDERPLOT" "region(\"chr1:50-200\") + matrix(\"$tmpdir/gt.tsv\", rowgroup=\" | \", rowcolour=\"$tmpdir/gt_rc.tsv\", rowbar=on, rownames=off, cluster=none)" \
+    -o "$tmpdir/gt_off.svg"
+svgnorm "$tmpdir/gt_off.svg"
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/gt_off.svg")" -eq 1
+# 2. metadata bands are stamped once across two windows (pre-fix: 2x = 4 rects)
+printf 'sample\tcond\nA | s1\tx\nA | s2\tx\nB | s3\ty\n' >"$tmpdir/gt_meta.tsv"
+printf 'column\tvalue\tcolour\ncond\tx\t#ff0000\ncond\ty\t#0000ff\n' >"$tmpdir/gt_rc3.tsv"
+printf 'chr1\t90\t110\tw1\nchr1\t140\t160\tw2\n' >"$tmpdir/gt_win.bed"   # two windows, one probe each
+"$CINDERPLOT" "regions(\"$tmpdir/gt_win.bed\") + matrix(\"$tmpdir/gt.tsv\", rowmeta=\"$tmpdir/gt_meta.tsv\", rowbar=\"cond\", rowcolour=\"$tmpdir/gt_rc3.tsv\", rownames=off, cluster=none)" \
+    -o "$tmpdir/gt_w3.svg"
+svgnorm "$tmpdir/gt_w3.svg"
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/gt_w3.svg")" -eq 2   # two x-rows, once
+# 3. a cramped row label at --font-size 5 never exceeds the 4.09pt track size
+"$CINDERPLOT" "region(\"chr20:44617001-44653999\") + matrix(\"$here/data/region_betas_long.tsv\", cluster=none, rownames=on, height=3)" \
+    --font-size 5 --editable-svg -o "$tmpdir/gt_fs5.svg"
+svgnorm "$tmpdir/gt_fs5.svg"
+if grep -o 'font-size="[0-9.]*"' "$tmpdir/gt_fs5.svg" | sed 's/[^0-9.]//g' | awk '$1 > 4.1 + 1e-6 {bad=1} END {exit bad}'; then :; else
+    echo "--font-size 5: a track label exceeds the 4.09pt flat size" >&2; exit 1; fi
+echo "gutter.sh: ok"
+
+# ===========================================================================
+# 2026-09-16 release review: things that used to exit 0 with a wrong figure.
+# ===========================================================================
+# 1. text that is not UTF-8 poisoned cairo: every later draw was a no-op and the
+#    figure came out blank with "wrote". Now refused at load, naming the cell.
+printf 'wt,mpg,g\n1,2,caf\351\n2,3,ok\n' >"$tmpdir/latin1.csv"
+if "$CINDERPLOT" "$tmpdir/latin1.csv + aes(wt, mpg, colour=g) + geom_point()" -o "$tmpdir/l1.svg" 2>"$tmpdir/err"; then
+    echo "latin-1 input unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'row 2 column `g` is not valid UTF-8' "$tmpdir/err"
+if "$CINDERPLOT" "$here/data/mtcars.csv + aes(wt, mpg) + geom_point() + labs(title=\"caf$(printf '\351')\")" -o "$tmpdir/l2.svg" 2>"$tmpdir/err"; then
+    echo "latin-1 spec unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'spec is not valid UTF-8' "$tmpdir/err"
+# 2. a failing render no longer truncates the previous output to 0 bytes: SVG
+#    and PDF are written only after the whole figure rendered
+printf 'keep' >"$tmpdir/keep.svg"
+if "$CINDERPLOT" "region(\"chr1:1-100\") + coverage(\"$tmpdir/does-not-exist.bg\")" -o "$tmpdir/keep.svg" 2>/dev/null; then
+    echo "missing coverage file unexpectedly succeeded" >&2; exit 1; fi
+test "$(wc -c <"$tmpdir/keep.svg")" -eq 4
+# 3. non-finite numbers are refused where they used to wipe the figure
+chkx "$here/data/mtcars.csv + aes(wt, mpg) + geom_point() + geom_abline(slope=inf, intercept=0)" 'slope= must be finite'
+chkx "region(\"chr1:1-100\") + interval(\"$here/tracks/peaks.bed\", height=inf)" 'height= must be a positive number'
+chkx "region(\"chr1:1-100\") + interval(\"$here/tracks/peaks.bed\", height=0)" 'height= must be a positive number'
+chkx "region(\"chr1:1000000-1200000\") + coverage(\"$here/tracks/atac.bedgraph\", max=0)" 'max= must be a positive number'
+chkx "$here/data/mtcars.csv + aes(wt, mpg, colour=hp) + geom_point() + scale_colour_gradient2(midpoint=nan)" 'midpoint= must be finite'
+# 4. rowbar="a," is a mistake, not a one-column list
+chkx "region(\"chr20:44617001-44653999\") + matrix(\"$here/data/region_betas_grouped.tsv\", rowmeta=\"$here/data/region_betas_samples.tsv\", rowbar=\"condition,\", cluster=none)" 'ends with a comma'
+# 5. a Newick with no named tip drew an empty figure
+printf ';' >"$tmpdir/empty.tre"; printf '();' >"$tmpdir/paren.tre"
+chkx "$tmpdir/empty.tre + geom_tree()" 'no named tips'
+chkx "$tmpdir/paren.tre + geom_tree()" 'no named tips'
+# 6. the flat track size reaches the kb-axis numbers with no matrix() present:
+#    genes-only at --font-size 20 is all 16.36 (20*9/11), never 16 (0.8*20)
+"$CINDERPLOT" "region(\"chr1:1000000-1200000\") + genes(\"$here/tracks/genes.bed\", height=2)" \
+    --size 6x2 --font-size 20 --editable-svg -o "$tmpdir/flat.svg"
+svgnorm "$tmpdir/flat.svg"
+# every label in the figure -- gene names AND axis numbers -- is the one flat
+# size; the pre-fix binary also emitted the grammar's 16.00 for the axis
+sizes=$(grep -o 'font-size="[0-9.]*"' "$tmpdir/flat.svg" | sort -u | tr '\n' ' ')
+test "$sizes" = 'font-size="16.36" ' || { echo "genes-only track has sizes: $sizes (want only 16.36)" >&2; exit 1; }
+# 7. --editable-svg never emits a raw control byte (it is not XML)
+"$CINDERPLOT" "$here/data/mtcars.csv + aes(wt, mpg) + geom_point() + labs(title=\"a$(printf '\001')b\")" --editable-svg -o "$tmpdir/ctl.svg"
+if grep -q "$(printf '\001')" "$tmpdir/ctl.svg"; then echo "raw control byte in --editable-svg output" >&2; exit 1; fi
+echo "review.sh: ok"
 
 echo "all tests passed"
