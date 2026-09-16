@@ -1,0 +1,12 @@
+from,to,value
+Astro,Astro,60
+Astro,OPC,8
+Astro,Micro,5
+OPC,OPC,52
+OPC,Astro,6
+Micro,Micro,44
+Micro,Astro,4
+Neuron,Neuron,70
+Neuron,OPC,3
+Endo,Endo,30
+Endo,Micro,6

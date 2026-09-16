@@ -4662,4 +4662,18 @@ test "$(fontsize "$tmpdir/genes.svg" WAYTOOLONGGENENAMETODRAWEVENATTHEFLOORSIZEX
 
 echo "meta.sh: all tests passed"
 
+# ===========================================================================
+# 2026-09-16: the metadata-band track's committed data (methylation betas grouped
+# by condition + the samples sheet + the rowcolour table) must parse and render.
+# The gallery card is genome-backed, so tests/gallery.sh SKIPS it on a CI runner
+# with no reference genome; this genome-free render keeps those data files under
+# test everywhere. (chord/radar/boxplot/smooth carry no genome path, so
+# tests/gallery.sh already renders them in CI -- no duplicate needed here.)
+# ===========================================================================
+"$CINDERPLOT" "region(\"chr20:44617001-44653999\") + matrix(\"$here/data/region_betas_grouped.tsv\", name=\"betas\", cluster=none, rownames=off, rowmeta=\"$here/data/region_betas_samples.tsv\", rowbar=\"condition\", rowcolour=\"$here/data/region_betas_rowcol.tsv\", height=10)" \
+    -o "$tmpdir/gc_meta.svg"
+test -s "$tmpdir/gc_meta.svg"
+grep -q '<image' "$tmpdir/gc_meta.svg" || { echo "metabands data: heatmap raster missing" >&2; exit 1; }
+echo "gallery-data.sh: all tests passed"
+
 echo "all tests passed"

@@ -1,0 +1,11 @@
+metric,score,model
+Precision,0.82,ridge
+Recall,0.75,ridge
+F1,0.78,ridge
+Accuracy,0.88,ridge
+AUC,0.91,ridge
+Precision,0.68,lasso
+Recall,0.71,lasso
+F1,0.69,lasso
+Accuracy,0.80,lasso
+AUC,0.84,lasso

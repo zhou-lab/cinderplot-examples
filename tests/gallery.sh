@@ -1,11 +1,11 @@
 #!/bin/sh
 # tests/gallery.sh — the gallery cases, as a test.
 #
-# The 35 specs behind the published figures live in the CODE repo, in the
+# The 40 specs behind the published figures live in the CODE repo, in the
 # SECTIONS list of docs/build.py, while their rendered output lives here in
-# docs/figs/. They are nearly disjoint from test.sh: only one of the 35 appears
-# there, and they reach 213 lines the suite never does. So they are worth
-# running, not just publishing.
+# docs/figs/. They are nearly disjoint from test.sh, and reach code paths the
+# suite never does. So they are worth running, not just publishing. Because they
+# are enumerated from SECTIONS, every new gallery card is tested here for free.
 #
 #   sh tests/gallery.sh                 every spec must render clean
 #   sh tests/gallery.sh --compare REF   also require byte-identical output
@@ -43,10 +43,12 @@ for _section, items in b.SECTIONS:
 PY
 rm -rf "$REPO/docs/__pycache__"
 
-# Two cases read a reference genome (gene models, cytoband) from
-# $CINDERPLOT_GENOMES. That repo is not on a CI runner, so skip those rather
-# than fail -- and say so, because a silent skip is how a case stops being a
-# test without anyone noticing.
+# Some cases read a reference genome (gene models, cytoband) from
+# $CINDERPLOT_GENOMES (the genome-track cards: region, regions, k562cnv,
+# metabands). That repo is not on a CI runner, so skip those rather than fail
+# -- and say so, because a silent skip is how a case stops being a test without
+# anyone noticing. Their committed data still gets a genome-free render in
+# tests/test.sh.
 have_genomes=1
 [ -d "$CINDERPLOT_GENOMES" ] || have_genomes=0
 
