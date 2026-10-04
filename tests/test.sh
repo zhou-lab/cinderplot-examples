@@ -2548,6 +2548,85 @@ printf 'x,xend,y\n10,100,1.5\n' >"$tmpdir/seglogd.csv"
 svgnorm "$tmpdir/seglog.svg"
 test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/seglog.svg")" -eq 1
 
+# ---- C15b: geom_segment(data=) is faceted and takes the colour mapping ----
+# all of a layer file's segments were drawn in every panel, in black; each
+# panel now gets its own rows, coloured through the main data's scale
+printf 'panel,x,y,xend,yend,g\np1,1,1,2,1,a\np1,2,2,3,2,a\np2,1,3,2,3,b\np2,2,4,3,4,b\n' >"$tmpdir/segfac.csv"
+printf 'panel,x,xend,y,yend,g\np1,1,3,1.5,1.5,a\np2,1,3,3.5,3.5,b\n' >"$tmpdir/segfacd.csv"
+"$CINDERPLOT" "$tmpdir/segfac.csv + aes(x,y,colour=g,xend=xend,yend=yend) + geom_point(colour=\"grey\") + geom_segment(data=\"$tmpdir/segfacd.csv\") + facet_wrap(~panel) + scale_colour_manual(values=c(a=\"#ff0000\", b=\"#0000ff\"))" \
+    --no-legend -o "$tmpdir/segfac.svg" --size 6x3
+svgnorm "$tmpdir/segfac.svg"
+# one red segment (panel p1) and one blue (panel p2), not two of each in both
+test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/segfac.svg")" -eq 1
+test "$(grep -c 'stroke="rgb(0%, 0%, 100%)"' "$tmpdir/segfac.svg")" -eq 1
+# a layer file with no facet column keeps ggplot's rule: every panel draws it
+printf 'x,xend,y,yend,g\n1,3,1.5,1.5,a\n' >"$tmpdir/segfacn.csv"
+"$CINDERPLOT" "$tmpdir/segfac.csv + aes(x,y,colour=g,xend=xend,yend=yend) + geom_point(colour=\"grey\") + geom_segment(data=\"$tmpdir/segfacn.csv\") + facet_wrap(~panel) + scale_colour_manual(values=c(a=\"#ff0000\", b=\"#0000ff\"))" \
+    --no-legend -o "$tmpdir/segfacn.svg" --size 6x3
+svgnorm "$tmpdir/segfacn.svg"
+test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/segfacn.svg")" -eq 2
+# a mapped colour column the layer file does not carry is named, not silently black
+if "$CINDERPLOT" "$tmpdir/segfac.csv + aes(x,y,colour=g,xend=xend,yend=yend) + geom_point() + geom_segment(data=\"$tmpdir/seglogd.csv\")" \
+        -o "$tmpdir/segfacx.svg" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "geom_segment(data=) with no colour column unexpectedly succeeded" >&2; exit 1
+fi
+grep 'geom_segment(data=.*colour/fill column `g` not in this file' "$tmpdir/err" >/dev/null
+
+# ---- C15c: data= and aes(y=col) on geom_point()/geom_line() ----
+# "raw points + a fitted line from another table" needed the extra rows faked
+# into the leading file; both were refused ("layer option `data` not
+# implemented", "layer-level mappings go in the one top-level aes()")
+printf 'panel,x,y,sm,g\np1,1,1,1.2,a\np1,2,3,2.2,a\np1,3,2,2.8,a\np2,1,4,3.8,b\np2,2,2,3.2,b\np2,3,5,3.6,b\n' >"$tmpdir/lay.csv"
+printf 'panel,x,y,g\np1,1,1.1,a\np1,3,2.9,a\np2,1,3.9,b\np2,3,4.9,b\n' >"$tmpdir/layd.csv"
+# the layer file is faceted and coloured through the main scale: one line per panel
+"$CINDERPLOT" "$tmpdir/lay.csv + aes(x,y,colour=g) + geom_point() + geom_line(data=\"$tmpdir/layd.csv\") + facet_wrap(~panel) + scale_colour_manual(values=c(a=\"#ff0000\", b=\"#0000ff\"))" \
+    --no-legend -o "$tmpdir/layd.svg" --size 6x3
+svgnorm "$tmpdir/layd.svg"
+test "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/layd.svg")" -eq 1
+test "$(grep -c 'stroke="rgb(0%, 0%, 100%)"' "$tmpdir/layd.svg")" -eq 1
+# aes(y=col) is the long spelling of y=: both draw the line through `sm`
+"$CINDERPLOT" "$tmpdir/lay.csv + aes(x,y,colour=g) + geom_point() + geom_line(aes(y=sm))" \
+    -o "$tmpdir/laya.svg" --size 4x3
+"$CINDERPLOT" "$tmpdir/lay.csv + aes(x,y,colour=g) + geom_point() + geom_line(y=sm)" \
+    -o "$tmpdir/layy.svg" --size 4x3
+cmp "$tmpdir/laya.svg" "$tmpdir/layy.svg"
+# ... and it is a different figure from the un-overridden one
+"$CINDERPLOT" "$tmpdir/lay.csv + aes(x,y,colour=g) + geom_point() + geom_line()" \
+    -o "$tmpdir/layn.svg" --size 4x3
+if cmp -s "$tmpdir/laya.svg" "$tmpdir/layn.svg"; then
+    echo "geom_line(aes(y=)) changed nothing" >&2; exit 1
+fi
+# a y= override still trains the y scale (sm reaches past y in panel p1)
+printf 'x,y,sm\n1,1,50\n2,2,60\n3,3,70\n' >"$tmpdir/laytr.csv"
+# (--editable-svg so the axis numbers are <text>, not glyph outlines)
+"$CINDERPLOT" "$tmpdir/laytr.csv + aes(x,y) + geom_point() + geom_line(y=sm)" \
+    --editable-svg -o "$tmpdir/laytr.svg" --size 4x3
+grep -q '>60<' "$tmpdir/laytr.svg" || { echo "y= did not train the y scale" >&2; exit 1; }
+# a discrete x: the layer file names categories of the main axis
+printf 'g,v,s\na,1,x\na,2,x\nb,3,x\nb,5,x\n' >"$tmpdir/layd2.csv"
+printf 'g,v,s\na,1.5,x\nb,4.0,x\n' >"$tmpdir/layd2m.csv"
+"$CINDERPLOT" "$tmpdir/layd2.csv + aes(g,v,colour=s) + geom_point() + geom_point(data=\"$tmpdir/layd2m.csv\", size=4)" \
+    -o "$tmpdir/layd2.svg" --size 4x3
+test -s "$tmpdir/layd2.svg"
+printf 'g,v,s\nzzz,1.5,x\n' >"$tmpdir/layd2b.csv"   # for the chkx block below
+
+# ---- C15d: under free scales a layer file trains its OWN panel ----
+# the layer extent was global, so one panel's outsized layer rows stretched
+# every panel's axis; p1 now stops at its own 4, p2 still reaches 400
+printf 'panel,x,y,xe,ye\np1,1,1,2,2\np1,2,2,3,3\np2,1,1,2,2\np2,2,2,3,3\n' >"$tmpdir/lfr.csv"
+printf 'panel,x,y,xe,ye\np1,1,3,2,4\np2,1,300,2,400\n' >"$tmpdir/lfrd.csv"
+"$CINDERPLOT" "$tmpdir/lfr.csv + aes(x,y,xend=xe,yend=ye) + geom_point() + geom_rect(data=\"$tmpdir/lfrd.csv\") + facet_wrap(~panel, scales=\"free_y\")" \
+    --editable-svg -o "$tmpdir/lfr.svg" --size 6x3
+# the 1..4 panel keeps small numbers; a global extent would label it 0..400
+grep -q '>4<' "$tmpdir/lfr.svg" || { echo "free_y panel did not keep its own range" >&2; exit 1; }
+grep -q '>400<' "$tmpdir/lfr.svg" || { echo "the wide panel lost its layer rows" >&2; exit 1; }
+test "$(grep -c '>400<' "$tmpdir/lfr.svg")" -eq 1
+# a layer file with no facet column is drawn in every panel, so it trains all
+printf 'x,y,xe,ye\n1,300,2,400\n' >"$tmpdir/lfrn.csv"
+"$CINDERPLOT" "$tmpdir/lfr.csv + aes(x,y,xend=xe,yend=ye) + geom_point() + geom_rect(data=\"$tmpdir/lfrn.csv\") + facet_wrap(~panel, scales=\"free_y\")" \
+    --editable-svg -o "$tmpdir/lfrn.svg" --size 6x3
+test "$(grep -c '>400<' "$tmpdir/lfrn.svg")" -eq 2
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
@@ -3140,6 +3219,10 @@ chkx() {   # chkx <full spec> <expected stderr fragment>
 }
 
 # aes() and the layer arguments
+chkx "$tmpdir/layd2.csv + aes(g,v,colour=s) + geom_point() + geom_point(data=\"$tmpdir/lay.csv\")" 'needs the aes columns'
+chkx "$tmpdir/layd2.csv + aes(g,v,colour=s) + geom_point() + geom_point(data=\"$tmpdir/layd2b.csv\")" 'not a category of the main'
+chkx "$tmpdir/layd2.csv + aes(g,v,size=v) + geom_point() + geom_point(data=\"$tmpdir/layd2m.csv\")" 'size=/shape= and a layer data='
+chkx "$tmpdir/lay.csv + aes(x,y) + geom_point() + geom_line(aes(colour=g))" 'layer-level mappings go in the one top-level'
 chk 'geom_point()' 'aes() must map x'
 chk 'aes(x, y, bogus=g) + geom_point()' 'is not implemented'
 chk 'aes(x, y) + geom_text()' 'need aes(label=...)'
