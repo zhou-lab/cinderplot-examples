@@ -2627,6 +2627,173 @@ printf 'x,y,xe,ye\n1,300,2,400\n' >"$tmpdir/lfrn.csv"
     --editable-svg -o "$tmpdir/lfrn.svg" --size 6x3
 test "$(grep -c '>400<' "$tmpdir/lfrn.svg")" -eq 2
 
+# ---- C15e: each annotation() band owns its palette (values=, palette=) ----
+# every band drew from one hue ramp with no override, so green meant a
+# different level in each band; values=/palette= give a band its own colours
+printf 'probe,s1,s2,s3\nr1,0.1,0.5,0.9\nr2,0.2,0.6,0.8\n' >"$tmpdir/apm.csv"
+printf 'sample,cohort\ns1,A\ns2,B\ns3,A\n' >"$tmpdir/apc.csv"
+printf 'probe,stage\nr1,early\nr2,late\n' >"$tmpdir/apr.csv"
+"$CINDERPLOT" "$tmpdir/apm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/apc.csv\", top_of(\"m\", height=0.05), values=c(A=\"#ff0000\", B=\"#0000ff\")) + annotation(\"$tmpdir/apr.csv\", left_of(\"m\", width=0.05), palette=\"Set2\")" \
+    -o "$tmpdir/apal.svg" --size 4x3
+svgnorm "$tmpdir/apal.svg"
+grep -q 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/apal.svg" || { echo "values= colour A not drawn" >&2; exit 1; }
+grep -q 'fill="rgb(0%, 0%, 100%)"' "$tmpdir/apal.svg" || { echo "values= colour B not drawn" >&2; exit 1; }
+# Set2's first two colours, #66c2a5 and #fc8d62
+grep -q 'fill="rgb(40%, 76.08%, 64.71%)"' "$tmpdir/apal.svg" || { echo "palette=Set2 not applied" >&2; exit 1; }
+grep -q 'fill="rgb(98.82%, 55.29%, 38.43%)"' "$tmpdir/apal.svg" || { echo "palette=Set2 not applied" >&2; exit 1; }
+# a positional list shorter than the levels is an error, not a grey tail
+if "$CINDERPLOT" "$tmpdir/apm.csv + heatmap(name=\"m\") + annotation(\"$tmpdir/apc.csv\", top_of(\"m\"), values=c(\"#ff0000\"))" \
+        -o "$tmpdir/apal2.svg" 2>"$tmpdir/err"; then
+    echo "short positional values= unexpectedly succeeded" >&2; exit 1
+fi
+grep -q 'values= gives 1 colours; the band has 2 levels' "$tmpdir/err"
+# grammar-mode bands take values= too
+printf 'g,v\na,1\nb,2\n' >"$tmpdir/apg.csv"
+printf 'g,batch\na,X\nb,Y\n' >"$tmpdir/apgm.csv"
+"$CINDERPLOT" "$tmpdir/apg.csv + aes(g,v) + geom_col() + annotation(\"$tmpdir/apgm.csv\", values=c(X=\"#ff0000\", Y=\"#0000ff\"))" \
+    -o "$tmpdir/apg.svg" --size 4x3
+svgnorm "$tmpdir/apg.svg"
+grep -q 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/apg.svg"
+# a bare height= says where it goes and what unit it is in
+if "$CINDERPLOT" "$tmpdir/apm.csv + heatmap(name=\"m\") + annotation(\"$tmpdir/apc.csv\", top_of(\"m\"), height=0.05)" \
+        -o "$tmpdir/apal3.svg" 2>"$tmpdir/err"; then
+    echo "bare height= unexpectedly succeeded" >&2; exit 1
+fi
+grep -q "goes inside the placement.*fractions of the first heatmap" "$tmpdir/err"
+
+# ---- C15f: a summary table as layers -- levels, labels, extents ----
+# levels= was checked against the main data only, geom_text() refused data=,
+# a segment file did not train the axes (a mean line past the points was
+# clipped away), and xend/yend had to exist in the main data too
+printf 'x,y,grp\n1,1,AS\n1,2,AS\n2,3,WGS\n2,4,WGS\n' >"$tmpdir/sum_p.csv"
+printf 'x,xe,y,ye,grp\n0.7,1.3,1.5,1.5,mean\n1.7,2.3,6,6,median\n' >"$tmpdir/sum_s.csv"
+printf 'x,y,label,grp\n1,5,n=2,AS\n2,5,n=2,WGS\n' >"$tmpdir/sum_t.csv"
+"$CINDERPLOT" "$tmpdir/sum_p.csv + aes(x, y, colour=factor(grp, levels=c(\"AS\",\"WGS\",\"mean\",\"median\")), xend=xe, yend=ye, label=label) + geom_point() + geom_segment(data=\"$tmpdir/sum_s.csv\", linetype=\"dashed\") + geom_text(data=\"$tmpdir/sum_t.csv\")" \
+    --editable-svg -o "$tmpdir/sum.svg" --size 5x3
+grep -q '>median<' "$tmpdir/sum.svg" || { echo "layer-only level missing from the legend" >&2; exit 1; }
+test "$(grep -c '>n=2<' "$tmpdir/sum.svg")" -eq 2 || { echo "geom_text(data=) labels not drawn" >&2; exit 1; }
+grep -q '>6<' "$tmpdir/sum.svg" || { echo "segment layer file did not train y" >&2; exit 1; }
+# without levels= the union is sorted, as factor() sorts
+"$CINDERPLOT" "$tmpdir/sum_p.csv + aes(x, y, colour=grp, xend=xe, yend=ye) + geom_point() + geom_segment(data=\"$tmpdir/sum_s.csv\")" \
+    --editable-svg -o "$tmpdir/sum2.svg" --size 5x3
+grep -o '>[A-Za-z]*<' "$tmpdir/sum2.svg" | tr -d '<>' | grep -x 'AS\|WGS\|mean\|median' | tr '\n' ' ' >"$tmpdir/sum2.lev"
+test "$(cat "$tmpdir/sum2.lev")" = "AS WGS mean median " || { echo "union order: $(cat "$tmpdir/sum2.lev")" >&2; exit 1; }
+
+# ---- C15g: labs(shape=)/labs(size=) title those legends; annotate("point") ----
+# labs() refused shape=/size=, so a shape=factor(x, levels=) legend read
+# "factor(call)"; annotate() had no point kind for an operating-point mark
+printf 'cat,p,call,n\nA,0.2,benign,1\nA,0.8,malig,2\nB,0.6,malig,3\n' >"$tmpdir/lsh.csv"
+"$CINDERPLOT" "$tmpdir/lsh.csv + aes(cat, p, shape=factor(call, levels=c(\"malig\",\"benign\")), size=n) + geom_point() + labs(shape=\"call\", size=\"count\") + annotate(\"point\", x=1.5, y=0.9, colour=\"red\", size=3)" \
+    --editable-svg -o "$tmpdir/lsh.svg" --size 4x3
+svgnorm "$tmpdir/lsh.svg"
+grep -q '>call<' "$tmpdir/lsh.svg" || { echo "labs(shape=) title not drawn" >&2; exit 1; }
+grep -q '>count<' "$tmpdir/lsh.svg" || { echo "labs(size=) title not drawn" >&2; exit 1; }
+! grep -q '>factor(call' "$tmpdir/lsh.svg"
+grep -q 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/lsh.svg" || { echo "annotate(point) not drawn" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/lsh.csv + aes(cat, p) + geom_point() + annotate(\"point\", x=1)" \
+        -o "$tmpdir/lsh2.svg" 2>"$tmpdir/err"; then
+    echo "annotate(point) without y= unexpectedly succeeded" >&2; exit 1
+fi
+grep -q 'annotate("point") needs x= and y=' "$tmpdir/err"
+
+# ---- C15h: scale_x_continuous(angle=) leans numeric-axis tick labels ----
+# angle= existed on scale_x_discrete only, so category names placed on a
+# numeric x through labels=c() could not be tilted
+printf 'x,p\n1,0.2\n2,0.5\n3,0.7\n' >"$tmpdir/cang.csv"
+"$CINDERPLOT" "$tmpdir/cang.csv + aes(x,p) + geom_point() + scale_x_continuous(breaks=c(1,2,3), labels=c(\"Ras-like\",\"Indeterminate\",\"untested / none\"), angle=45)" \
+    --editable-svg -o "$tmpdir/cang.svg" --size 4x3
+test "$(grep -c 'matrix(0.707107 -0.707107' "$tmpdir/cang.svg")" -eq 3 || { echo "continuous x labels not at 45 degrees" >&2; exit 1; }
+# on the side axis angle= did nothing; it now says which scale leans
+if "$CINDERPLOT" "$tmpdir/cang.csv + aes(x,p) + geom_point() + scale_y_continuous(angle=45)" \
+        -o "$tmpdir/cang2.svg" 2>"$tmpdir/err"; then
+    echo "angle= on the side axis unexpectedly succeeded" >&2; exit 1
+fi
+grep -q "tilts the bottom axis" "$tmpdir/err"
+
+# ---- C15i: annotation colours from a file, numeric band ramps, side titles ----
+# values=c() capped a band at 64 colours (a 225-level Cancer Type band fell
+# back to the hue ramp), a numeric band was viridis only, and a band's
+# title could only sit above it
+printf 'probe,s1,s2,s3,s4\nr1,0.1,0.5,0.9,0.3\nr2,0.2,0.6,0.8,0.4\n' >"$tmpdir/afm.csv"
+printf 'sample,ctype\ns1,AML\ns2,APL\ns3,AML\ns4,CLL\n' >"$tmpdir/afc.csv"
+printf 'level\tcolour\nAML\t#ff0000\nAPL\t#00ff00\nCLL\t#0000ff\n' >"$tmpdir/afcol.tsv"
+printf 'sample,purity\ns1,0.1\ns2,0.5\ns3,0.9\ns4,0.3\n' >"$tmpdir/afp.csv"
+"$CINDERPLOT" "$tmpdir/afm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/afc.csv\", top_of(\"m\", height=0.1), values=\"$tmpdir/afcol.tsv\", name=\"ct\", title=\"Cancer Type\", title.side=left) + annotation(\"$tmpdir/afp.csv\", top_of(\"ct\", height=0.1), values=c(\"#ff00ff\", \"#00ffff\"), name=\"pu\")" \
+    --editable-svg -o "$tmpdir/af.svg" --size 4x3
+svgnorm "$tmpdir/af.svg"
+grep -q 'fill="rgb(0%, 100%, 0%)"' "$tmpdir/af.svg" || { echo "values= file colour not used" >&2; exit 1; }
+grep -q 'fill="rgb(100%, 0%, 100%)"' "$tmpdir/af.svg" || { echo "numeric values= ramp not used" >&2; exit 1; }
+# a side title is set at the row-name size; a top title at the base size
+grep -q 'font-size="8.80"[^>]*>Cancer Type' "$tmpdir/af.svg" || { echo "title.side=left not applied" >&2; exit 1; }
+# a numeric band refuses a qualitative set, a categorical one a ramp
+if "$CINDERPLOT" "$tmpdir/afm.csv + heatmap(name=\"m\") + annotation(\"$tmpdir/afp.csv\", top_of(\"m\"), palette=\"Set2\")" \
+        -o "$tmpdir/af2.svg" 2>"$tmpdir/err"; then
+    echo "a qualitative palette on a numeric band unexpectedly succeeded" >&2; exit 1
+fi
+grep -q 'is numeric: palette="Set2" is a qualitative set' "$tmpdir/err"
+if "$CINDERPLOT" "$tmpdir/afm.csv + heatmap(name=\"m\") + annotation(\"$tmpdir/afc.csv\", top_of(\"m\"), palette=\"bwr\")" \
+        -o "$tmpdir/af2.svg" 2>"$tmpdir/err"; then
+    echo "a ramp on a categorical band unexpectedly succeeded" >&2; exit 1
+fi
+grep -q 'is categorical: palette="bwr" is a continuous ramp' "$tmpdir/err"
+
+# ---- C15j: heatmap colsplit=/rowsplit= gaps and scale_fill_*(na.value=) ----
+# there was no way to split a heatmap into blocks: NA spacer columns drew
+# grey, and rows could not be gapped at all
+printf 'probe,s1,s2,s3,s4,s5,s6\nr1,0.1,0.5,0.9,0.3,0.6,NA\nr2,0.2,0.6,0.8,0.4,0.7,0.2\nr3,0.9,0.1,0.2,0.4,0.5,0.6\nr4,0.5,0.5,0.5,0.5,0.5,0.5\n' >"$tmpdir/spm.csv"
+printf 'sample,grp\ns1,A\ns2,A\ns3,B\ns4,B\ns5,B\ns6,C\n' >"$tmpdir/spc.csv"
+printf 'probe,lin\nr1,X\nr2,X\nr3,Y\nr4,Y\n' >"$tmpdir/spr.csv"
+spl() { "$CINDERPLOT" "$tmpdir/spm.csv + heatmap(name=\"m\", cluster=none$1) + annotation(\"$tmpdir/spc.csv\", top_of(\"m\", height=0.08), name=\"grp\") + annotation(\"$tmpdir/spr.csv\", left_of(\"m\", width=0.05), name=\"lin\") + scale_fill_viridis($2)" -o "$tmpdir/sp$3.svg" --size 4x3; svgnorm "$tmpdir/sp$3.svg"; }
+spl '' '' 0
+spl ', colsplit="grp", rowsplit="lin", gap=4' 'na.value="white"' 1
+w0=$(grep -c 'fill="rgb(100%, 100%, 100%)"' "$tmpdir/sp0.svg" || true)
+w1=$(grep -c 'fill="rgb(100%, 100%, 100%)"' "$tmpdir/sp1.svg" || true)
+# 2 column boundaries over (heatmap, grp band) + 1 row boundary over
+# (heatmap, lin band) = 6 gap rects, plus the one NA cell now white
+test "$((w1 - w0))" -eq 7 || { echo "split gaps: expected 7 more white rects, got $((w1 - w0))" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/spm.csv + heatmap(name=\"m\", colsplit=\"lin\") + annotation(\"$tmpdir/spr.csv\", left_of(\"m\"), name=\"lin\")" \
+        -o "$tmpdir/sp2.svg" 2>"$tmpdir/err"; then
+    echo "colsplit= on a row annotation unexpectedly succeeded" >&2; exit 1
+fi
+grep -q 'needs a categorical annotation placed top_of/beneath' "$tmpdir/err"
+
+# ---- C15k: aes(linetype=) maps a discrete column to dash patterns ----
+# linetype was a layer constant only; a mapped one was refused
+printf 'x,y,cls,stat\n1,1,A,mean\n2,2,A,mean\n3,3,A,mean\n1,2,A,median\n2,3,A,median\n3,4,A,median\n' >"$tmpdir/lt.csv"
+"$CINDERPLOT" "$tmpdir/lt.csv + aes(x, y, colour=cls, linetype=stat) + geom_line() + labs(linetype=\"statistic\")" \
+    --editable-svg -o "$tmpdir/lt.svg" --size 4x3
+# the median line and its legend key dash ("22" = 2 x the line width);
+# the mean line and key are solid
+test "$(grep -c 'stroke-dasharray' "$tmpdir/lt.svg")" -eq 2 || { echo "linetype: expected 2 dashed strokes" >&2; exit 1; }
+grep -q '>statistic<' "$tmpdir/lt.svg" || { echo "labs(linetype=) title not drawn" >&2; exit 1; }
+# a segment layer file may carry the column alone; its levels join the scale
+printf 'x,y\n1,1\n2,3\n' >"$tmpdir/ltp.csv"
+printf 'x,xe,y,ye,stat\n0.7,1.3,1.5,1.5,mean\n1.7,2.3,2.5,2.5,median\n' >"$tmpdir/lts.csv"
+"$CINDERPLOT" "$tmpdir/ltp.csv + aes(x, y, xend=xe, yend=ye, linetype=stat) + geom_point() + geom_segment(data=\"$tmpdir/lts.csv\")" \
+    --editable-svg -o "$tmpdir/lt2.svg" --size 4x3
+grep -q '>median<' "$tmpdir/lt2.svg" || { echo "segment-file linetype level missing" >&2; exit 1; }
+test "$(grep -c 'stroke-dasharray' "$tmpdir/lt2.svg")" -eq 2
+# colour and linetype on one column merge into a single key, as in ggplot2
+"$CINDERPLOT" "$tmpdir/lt.csv + aes(x, y, colour=stat, linetype=stat) + geom_line()" \
+    --editable-svg -o "$tmpdir/lt3.svg" --size 4x3
+test "$(grep -c '>stat<' "$tmpdir/lt3.svg")" -eq 1 || { echo "colour+linetype legends not merged" >&2; exit 1; }
+
+# ---- C15l: auto-fit makes room for a tall heatmap legend stack ----
+# the side legends stack centred on the canvas, and auto-fit never counted
+# them: a 2x4 matrix with three keys got a 144pt canvas and the top and
+# bottom keys were cut in half, silently
+printf 'probe,s1,s2,s3,s4\nr1,0.1,0.5,0.9,0.3\nr2,0.2,0.6,0.8,0.4\n' >"$tmpdir/lcm.csv"
+printf 'sample,ctype\ns1,AML\ns2,APL\ns3,AML\ns4,CLL\n' >"$tmpdir/lcc.csv"
+printf 'sample,purity\ns1,0.1\ns2,0.5\ns3,0.9\ns4,0.3\n' >"$tmpdir/lcp.csv"
+lcs="$tmpdir/lcm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/lcc.csv\", top_of(\"m\", height=0.1), name=\"ct\") + annotation(\"$tmpdir/lcp.csv\", top_of(\"ct\", height=0.1), name=\"pu\") + legend(right_of(\"m\")) + legend(right_of(\"ct\")) + legend(right_of(\"pu\"))"
+"$CINDERPLOT" "$lcs" -o "$tmpdir/lc.svg" 2>"$tmpdir/err"
+! grep -q 'clipped' "$tmpdir/err" || { echo "auto-fit still clips the legend stack" >&2; exit 1; }
+lch=$(sed -n 's/.*<svg[^>]* height="\([0-9.]*\).*/\1/p' "$tmpdir/lc.svg" | head -1)
+awk -v h="$lch" 'BEGIN { exit !(h >= 256) }' || { echo "auto-fit canvas $lch pt is shorter than the 256pt stack" >&2; exit 1; }
+# a fixed --size is honoured, and says that it clips
+"$CINDERPLOT" "$lcs" -o "$tmpdir/lc2.svg" --size 4x2 2>"$tmpdir/err"
+grep -q 'right_of legends stack .* clipped' "$tmpdir/err" || { echo "no clipping warning under --size" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
