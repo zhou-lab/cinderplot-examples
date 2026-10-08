@@ -2778,21 +2778,218 @@ test "$(grep -c 'stroke-dasharray' "$tmpdir/lt2.svg")" -eq 2
     --editable-svg -o "$tmpdir/lt3.svg" --size 4x3
 test "$(grep -c '>stat<' "$tmpdir/lt3.svg")" -eq 1 || { echo "colour+linetype legends not merged" >&2; exit 1; }
 
-# ---- C15l: auto-fit makes room for a tall heatmap legend stack ----
+# ---- C15l: a tall heatmap legend stack wraps into columns ----
 # the side legends stack centred on the canvas, and auto-fit never counted
-# them: a 2x4 matrix with three keys got a 144pt canvas and the top and
-# bottom keys were cut in half, silently
+# them: a 2x4 matrix with three keys got a 144pt canvas and the end keys
+# were cut in half, silently. A stack taller than the canvas now wraps into
+# further columns outward (ComplexHeatmap's packing), so the canvas keeps
+# the matrix's height; only one legend taller than the canvas still clips,
+# and says so
 printf 'probe,s1,s2,s3,s4\nr1,0.1,0.5,0.9,0.3\nr2,0.2,0.6,0.8,0.4\n' >"$tmpdir/lcm.csv"
 printf 'sample,ctype\ns1,AML\ns2,APL\ns3,AML\ns4,CLL\n' >"$tmpdir/lcc.csv"
 printf 'sample,purity\ns1,0.1\ns2,0.5\ns3,0.9\ns4,0.3\n' >"$tmpdir/lcp.csv"
 lcs="$tmpdir/lcm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/lcc.csv\", top_of(\"m\", height=0.1), name=\"ct\") + annotation(\"$tmpdir/lcp.csv\", top_of(\"ct\", height=0.1), name=\"pu\") + legend(right_of(\"m\")) + legend(right_of(\"ct\")) + legend(right_of(\"pu\"))"
-"$CINDERPLOT" "$lcs" -o "$tmpdir/lc.svg" 2>"$tmpdir/err"
+"$CINDERPLOT" "$lcs" --editable-svg -o "$tmpdir/lc.svg" 2>"$tmpdir/err"
 ! grep -q 'clipped' "$tmpdir/err" || { echo "auto-fit still clips the legend stack" >&2; exit 1; }
 lch=$(sed -n 's/.*<svg[^>]* height="\([0-9.]*\).*/\1/p' "$tmpdir/lc.svg" | head -1)
-awk -v h="$lch" 'BEGIN { exit !(h >= 256) }' || { echo "auto-fit canvas $lch pt is shorter than the 256pt stack" >&2; exit 1; }
-# a fixed --size is honoured, and says that it clips
+awk -v h="$lch" 'BEGIN { exit !(h < 200) }' || { echo "canvas stretched to ${lch}pt for the stack instead of wrapping" >&2; exit 1; }
+# the keys stand side by side: purity's title sits right of ctype's
+ctx=$(sed -n 's/.*<text x="\([0-9.]*\)"[^>]*>ctype<.*/\1/p' "$tmpdir/lc.svg")
+pux=$(sed -n 's/.*<text x="\([0-9.]*\)"[^>]*>purity<.*/\1/p' "$tmpdir/lc.svg")
+awk -v a="$ctx" -v b="$pux" 'BEGIN { exit !(b > a + 20) }' || { echo "legends not in separate columns ($ctx, $pux)" >&2; exit 1; }
+# a fixed --size wraps as well; one legend taller than the canvas warns
 "$CINDERPLOT" "$lcs" -o "$tmpdir/lc2.svg" --size 4x2 2>"$tmpdir/err"
-grep -q 'right_of legends stack .* clipped' "$tmpdir/err" || { echo "no clipping warning under --size" >&2; exit 1; }
+! grep -q 'clipped' "$tmpdir/err" || { echo "--size 4x2 should wrap, not clip" >&2; exit 1; }
+"$CINDERPLOT" "$lcs" -o "$tmpdir/lc3.svg" --size 4x1 2>"$tmpdir/err"
+grep -q 'right_of legend is .* tall on a .* canvas; it is clipped' "$tmpdir/err" || { echo "no clipping warning for a legend taller than the canvas" >&2; exit 1; }
+
+# ---- C15m: annotation(limits=) pins a numeric band's ramp ----
+# a band mapped its ramp over the data range (0.25..1 here), so the white
+# middle of blue-white-red fell at 0.625 rather than 0.5
+printf 'probe,s1,s2,s3,s4\nr1,0.1,0.5,0.9,0.3\nr2,0.2,0.6,0.8,0.4\n' >"$tmpdir/alm.csv"
+printf 'sample,purity\ns1,0.25\ns2,0.5\ns3,1.0\ns4,0.75\n' >"$tmpdir/alp.csv"
+"$CINDERPLOT" "$tmpdir/alm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/alp.csv\", top_of(\"m\", height=0.1), values=c(\"#0000ff\",\"#ffffff\",\"#ff0000\"), limits=c(0,1))" \
+    -o "$tmpdir/al.svg" --size 4x3
+svgnorm "$tmpdir/al.svg"
+test "$(grep -c 'fill="rgb(100%, 100%, 100%)"' "$tmpdir/al.svg")" -eq 1 || { echo "limits=c(0,1): 0.5 is not the white midpoint" >&2; exit 1; }
+printf 'sample,ctype\ns1,A\ns2,B\ns3,A\ns4,B\n' >"$tmpdir/alc.csv"
+if "$CINDERPLOT" "$tmpdir/alm.csv + heatmap(name=\"m\") + annotation(\"$tmpdir/alc.csv\", top_of(\"m\"), limits=c(0,1))" \
+        -o "$tmpdir/al2.svg" 2>"$tmpdir/err"; then
+    echo "limits= on a categorical band unexpectedly succeeded" >&2; exit 1
+fi
+grep -q 'limits= pins a numeric band' "$tmpdir/err"
+
+# ---- C15n: a left_of legend sits clear of the left row names ----
+# a left colourbar was anchored by its bar, so a title wider than the bar ran
+# right, over the rownames=left labels; the block's right edge now meets the
+# label gutter and the title starts at the block's left
+printf 'probe,s1,s2,s3\nEpith_NoHepaKidney,0.1,0.5,0.9\nHema,0.2,0.6,0.8\n' >"$tmpdir/llm.csv"
+"$CINDERPLOT" "$tmpdir/llm.csv + heatmap(name=\"m\", cluster=none, rownames=left) + legend(left_of(\"m\"), title=\"Leukocyte Fraction\")" \
+    --editable-svg -o "$tmpdir/ll.svg" --size 5x2
+ttx=$(sed -n 's/.*<text x="\([0-9.]*\)"[^>]*>Leukocyte Fraction<.*/\1/p' "$tmpdir/ll.svg")
+lbx=$(sed -n 's/.*<text x="\([0-9.]*\)"[^>]*>Epith_NoHepaKidney<.*/\1/p' "$tmpdir/ll.svg")
+# the title (11pt, ~95pt wide) must end before the row label starts
+awk -v t="$ttx" -v l="$lbx" 'BEGIN { exit !(t + 95 <= l) }' || { echo "left legend title at $ttx overlaps the row names at $lbx" >&2; exit 1; }
+
+# ---- C15o: labels=data on a horizontal (top_of/beneath) band ----
+# run labels were refused on a horizontal band; they now stand outward,
+# one per run, centred on it, spread apart where runs are narrow
+printf 'probe,s1,s2,s3,s4,s5,s6,s7,s8\nr1,1,2,3,4,5,6,7,8\nr2,2,3,4,5,6,7,8,1\n' >"$tmpdir/hlm.csv"
+printf 'sample,grp\ns1,Hematological\ns2,Hematological\ns3,Hematological\ns4,Carcinoma\ns5,Adrenal\ns6,CNS\ns7,Mesenchymal\ns8,Mesenchymal\n' >"$tmpdir/hlg.csv"
+"$CINDERPLOT" "$tmpdir/hlm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/hlg.csv\", top_of(\"m\", height=0.1), labels=data, title=\"Cancer Group\")" \
+    --editable-svg -o "$tmpdir/hl.svg" --size 4x2
+for lv in Hematological Carcinoma Adrenal CNS Mesenchymal; do
+    test "$(grep -c ">$lv<" "$tmpdir/hl.svg")" -eq 1 || { echo "run label $lv not drawn once" >&2; exit 1; }
+done
+# the labels stand above the band, and the title above the labels
+lby=$(sed -n 's/.*<text x="[0-9.]*" y="\([0-9.]*\)"[^>]*>Carcinoma<.*/\1/p' "$tmpdir/hl.svg")
+tty=$(sed -n 's/.*<text x="[0-9.]*" y="\([0-9.]*\)"[^>]*>Cancer Group<.*/\1/p' "$tmpdir/hl.svg")
+awk -v l="$lby" -v t="$tty" 'BEGIN { exit !(t < l) }' || { echo "title (y=$tty) not above the run labels (y=$lby)" >&2; exit 1; }
+# neighbouring labels never overlap: each starts after the previous ends
+python3 - "$tmpdir/hl.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+lab = sorted((float(m.group(1)), m.group(2)) for m in re.finditer(
+    r'<text x="([0-9.]+)"[^>]*>(Hematological|Carcinoma|Adrenal|CNS|Mesenchymal)<', s))
+assert len(lab) == 5, lab
+# Arial at 8.8pt averages about 0.5 em per glyph; 0.55 bounds these names
+for (x0, t0), (x1, t1) in zip(lab, lab[1:]):
+    assert x0 + 0.55 * 8.8 * len(t0) <= x1, (t0, x0, t1, x1)
+PY
+
+# ---- C15p: a discrete legend laid flat beneath()/top_of() ----
+# discrete keys were refused off the sides ("must be vertical"), so a
+# 225-level Cancer Type key had to stand in eleven columns beside the
+# figure; beneath() now fills a swatch grid row-major under its target
+printf 'probe,s1,s2,s3,s4,s5,s6\nr1,1,2,3,4,5,6\nr2,2,3,4,5,6,1\n' >"$tmpdir/dkm.csv"
+printf 'sample,ct\ns1,A\ns2,B\ns3,C\ns4,D\ns5,E\ns6,F\n' >"$tmpdir/dkc.csv"
+"$CINDERPLOT" "$tmpdir/dkm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/dkc.csv\", top_of(\"m\", height=0.1), name=\"ct\") + legend(beneath(\"ct\"), title=\"Type\", ncol=3)" \
+    --editable-svg -o "$tmpdir/dk.svg" --size 4x
+# ncol=3, row-major: A B C on the first row, D E F on the second
+ya=$(sed -n 's/.*<text x="[0-9.]*" y="\([0-9.]*\)"[^>]*>A<.*/\1/p' "$tmpdir/dk.svg")
+yc=$(sed -n 's/.*<text x="[0-9.]*" y="\([0-9.]*\)"[^>]*>C<.*/\1/p' "$tmpdir/dk.svg")
+yd=$(sed -n 's/.*<text x="[0-9.]*" y="\([0-9.]*\)"[^>]*>D<.*/\1/p' "$tmpdir/dk.svg")
+xa=$(sed -n 's/.*<text x="\([0-9.]*\)"[^>]*>A<.*/\1/p' "$tmpdir/dk.svg")
+xd=$(sed -n 's/.*<text x="\([0-9.]*\)"[^>]*>D<.*/\1/p' "$tmpdir/dk.svg")
+test "$ya" = "$yc" || { echo "A and C not on one row ($ya, $yc)" >&2; exit 1; }
+awk -v a="$ya" -v d="$yd" 'BEGIN { exit !(d > a) }' || { echo "D not on the row below A" >&2; exit 1; }
+test "$xa" = "$xd" || { echo "D not under A ($xa, $xd)" >&2; exit 1; }
+# the key sits below the heatmap's rows, inside the canvas
+hh=$(sed -n 's/.*<svg[^>]* height="\([0-9.]*\).*/\1/p' "$tmpdir/dk.svg" | head -1)
+awk -v d="$yd" -v h="$hh" 'BEGIN { exit !(d < h) }'
+# ncol=/nrow= only shape a flat key
+if "$CINDERPLOT" "$tmpdir/dkm.csv + heatmap(name=\"m\") + legend(right_of(\"m\"), ncol=2)" \
+        -o "$tmpdir/dk2.svg" 2>"$tmpdir/err"; then
+    echo "ncol= on a side colourbar unexpectedly succeeded" >&2; exit 1
+fi
+grep -q 'shapes a discrete key' "$tmpdir/err"
+
+# ---- C15q: run labels on end (label.angle=90); one tall key wraps ----
+# forty narrow runs' names spread wider than the panel and ran off the
+# canvas, in light level colours; and a single discrete key taller than the
+# canvas was one clipped column. Labels now stand on end and shrink to fit,
+# label.colour= sets their ink, and a tall side key wraps into columns
+printf 'probe' >"$tmpdir/rlm.csv"
+printf 'sample,ct\n' >"$tmpdir/rlc.csv"
+i=1; while [ $i -le 30 ]; do
+    printf ',s%d' $i >>"$tmpdir/rlm.csv"
+    printf 's%d,cancer_type_%02d\n' $i $i >>"$tmpdir/rlc.csv"
+    i=$((i + 1))
+done
+printf '\nr1' >>"$tmpdir/rlm.csv"
+i=1; while [ $i -le 30 ]; do printf ',%d' $i >>"$tmpdir/rlm.csv"; i=$((i + 1)); done
+printf '\n' >>"$tmpdir/rlm.csv"
+"$CINDERPLOT" "$tmpdir/rlm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/rlc.csv\", beneath(\"m\", height=0.2), name=\"ct\", labels=data, label.angle=90, label.colour=\"black\") + legend(right_of(\"ct\"), title=\"Type\")" \
+    --editable-svg -o "$tmpdir/rl.svg" --size 8x4.5 2>"$tmpdir/err"
+# every run label is rotated, black, and inside the canvas
+wd=$(sed -n 's/.*<svg[^>]* width="\([0-9.]*\).*/\1/p' "$tmpdir/rl.svg" | head -1)
+python3 - "$tmpdir/rl.svg" "$wd" <<'PY'
+import re, sys
+s, wd = open(sys.argv[1]).read(), float(sys.argv[2])
+labs = re.findall(r'<text [^>]*fill="#000000" transform="matrix\(0 -1 1 0 ([0-9.]+) [0-9.]+\)">cancer_type_\d\d<', s)
+assert len(labs) == 30, len(labs)
+assert all(float(x) < wd for x in labs), (max(map(float, labs)), wd)
+PY
+# the 30-level key fits by wrapping into columns, not by clipping
+! grep -q 'clipped' "$tmpdir/err" || { echo "tall key clipped instead of wrapping" >&2; exit 1; }
+# (the key's entries are the unrotated texts; run labels carry a transform)
+x1=$(grep -v transform "$tmpdir/rl.svg" | sed -n 's/.*<text x="\([0-9.]*\)"[^>]*>cancer_type_01<.*/\1/p' | head -1)
+x30=$(grep -v transform "$tmpdir/rl.svg" | sed -n 's/.*<text x="\([0-9.]*\)"[^>]*>cancer_type_30<.*/\1/p' | head -1)
+awk -v a="$x1" -v b="$x30" 'BEGIN { exit !(b > a + 20) }' || { echo "key not wrapped ($x1, $x30)" >&2; exit 1; }
+
+# ---- C15r: geom_text(vjust=) in ggplot units ----
+# vjust= existed on annotate("text") only, so a value label above a mean
+# dot needed a second file with y shifted in data units
+printf 'x,y,lab\n1,1,low\n2,2,mid\n3,3,high\n' >"$tmpdir/vj.csv"
+vjy() { "$CINDERPLOT" "$tmpdir/vj.csv + aes(x,y,label=lab) + geom_point() + geom_text($1)" \
+            --editable-svg -o "$tmpdir/vj.svg" --size 4x3
+        sed -n 's/.*<text x="[0-9.]*" y="\([0-9.]*\)"[^>]*>mid<.*/\1/p' "$tmpdir/vj.svg"; }
+y0=$(vjy 'vjust=0'); yh=$(vjy 'vjust=0.5'); y1=$(vjy 'vjust=1'); yn=$(vjy ''); yl=$(vjy 'vjust=-0.6')
+# SVG y grows downward: -0.6 sits highest, then 0, 0.5 (= the default), 1
+awk -v l="$yl" -v a="$y0" -v h="$yh" -v b="$y1" -v n="$yn" 'BEGIN {
+    exit !(l < a && a < h && h < b && h == n && ((h - a) - (b - h))^2 < 0.01) }' \
+    || { echo "vjust order: -0.6=$yl 0=$y0 0.5=$yh 1=$y1 none=$yn" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/vj.csv + aes(x,y,label=lab) + geom_text(vjust=0, angle=90)" \
+        -o "$tmpdir/vj2.svg" 2>"$tmpdir/err"; then
+    echo "vjust= with angle= unexpectedly succeeded" >&2; exit 1
+fi
+grep -q 'vjust=) with angle= is not implemented' "$tmpdir/err"
+
+# ---- C15s: SVG has a white canvas by default; --transparent opts out ----
+# an SVG carried no background, so a dark-themed viewer showed the figure on
+# black and the axis text vanished; ggplot2 and R's svg() paint white
+printf 'x,y\n1,1\n2,2\n' >"$tmpdir/bg.csv"
+"$CINDERPLOT" "$tmpdir/bg.csv + aes(x,y) + geom_point()" -o "$tmpdir/bg.svg" --size 4x3
+svgnorm --keep-canvas "$tmpdir/bg.svg"
+# the first drawn shape covers the whole 288x216 canvas in white
+python3 - "$tmpdir/bg.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+body = s.split('</defs>', 1)[-1]
+m = re.search(r'<(rect|path)[^>]*>', body)
+assert m and 'rect' == m.group(1), m and m.group(0)
+r = m.group(0)
+assert 'fill="rgb(100%, 100%, 100%)"' in r, r
+x, y, w, h = (float(re.search(k + r'="([-0-9.]+)"', r).group(1)) for k in ('x', 'y', 'width', 'height'))
+assert x <= 0 and y <= 0 and x + w >= 288 and y + h >= 216, r
+PY
+"$CINDERPLOT" "$tmpdir/bg.csv + aes(x,y) + geom_point()" -o "$tmpdir/bg2.svg" --size 4x3 --transparent
+svgnorm --keep-canvas "$tmpdir/bg2.svg"
+test "$(grep -c '<rect' "$tmpdir/bg.svg")" -eq "$(( $(grep -c '<rect' "$tmpdir/bg2.svg") + 1 ))" \
+    || { echo "--transparent did not drop exactly the canvas rect" >&2; exit 1; }
+
+# ---- C15t: a top band's side title does not push a left_of band away ----
+# the gutter at the matrix's left edge counted every object on that edge,
+# so a top band's title.side=left title moved the row annotation out by the
+# title's width, leaving a gap between it and the matrix; the title shares
+# no rows with it and now sits in its own row, reserved at the canvas edge
+printf 'probe,s1,s2,s3,s4\nr1,1,2,3,4\nr2,2,3,4,1\nr3,3,4,1,2\n' >"$tmpdir/gtm.csv"
+printf 'sample,site\ns1,N\ns2,N\ns3,T\ns4,T\n' >"$tmpdir/gtc.csv"
+printf 'probe,grp\nr1,in\nr2,out\nr3,out\n' >"$tmpdir/gtr.csv"
+# the gap between the row annotation's band and the matrix's first cell
+# (viridis 0) must not depend on the top band's title
+gut() { "$CINDERPLOT" "$tmpdir/gtm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/gtc.csv\", top_of(\"m\", height=0.1), name=\"site\"$1) + annotation(\"$tmpdir/gtr.csv\", left_of(\"m\", width=0.03), name=\"grp\", labels=data, values=c(in=\"#00ff00\", out=\"#ff00ff\"))" \
+            --editable-svg -o "$tmpdir/gt.svg" --size 5x2.5
+        svgnorm "$tmpdir/gt.svg"
+        python3 - "$tmpdir/gt.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+# the band's "in" run (green) and its right edge
+d = re.search(r'fill="rgb\(0%, 100%, 0%\)"[^>]*d="([^"]*)"', s).group(1)
+right = max(float(x) for x in re.findall(r'[ML] ([0-9.]+) ', d))
+cell = min(float(m.group(1)) for m in re.finditer(
+    r'fill="rgb\(26.666667%, 0.392157%, 32.941176%\)"[^>]*d="M ([0-9.]+) ', s))
+t = re.search(r'<text x="([-0-9.]+)"[^>]*>A Long Sample Site Title<', s)
+assert t is None or float(t.group(1)) >= 0, "side title clipped at x=" + t.group(1)
+print("%.2f" % (cell - right))
+PY
+}
+d0=$(gut '')
+d1=$(gut ', title="A Long Sample Site Title", title.side=left')
+# (pad= is a fraction of the matrix width, so the gap scales a little with
+# the canvas; the bug put the title's whole width, ~100pt, into it)
+awk -v a="$d0" -v b="$d1" 'BEGIN { exit !(a < 6 && b < 6) }' \
+    || { echo "the side title moved the row annotation: $d0 -> $d1 pt from the matrix" >&2; exit 1; }
 
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
