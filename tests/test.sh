@@ -2991,6 +2991,211 @@ d1=$(gut ', title="A Long Sample Site Title", title.side=left')
 awk -v a="$d0" -v b="$d1" 'BEGIN { exit !(a < 6 && b < 6) }' \
     || { echo "the side title moved the row annotation: $d0 -> $d1 pt from the matrix" >&2; exit 1; }
 
+# ---- C15u: cluster=both + colsplit= clusters within each block ----
+# colsplit= only painted gaps at level changes, so a clustered axis
+# interleaved the groups (6 runs for 2 levels here, a gap at each); like
+# ComplexHeatmap's column_split, each block is now clustered on its own,
+# in level order, and a dendrogram draws one tree per block
+printf 'probe,s1,s2,s3,s4,s5,s6\nr1,0.1,0.11,0.5,0.52,0.9,0.88\nr2,0.2,0.22,0.6,0.58,0.8,0.79\nr3,0.3,0.29,0.4,0.41,0.7,0.72\n' >"$tmpdir/csm.csv"
+printf 'sample,grp\ns1,A\ns2,B\ns3,A\ns4,B\ns5,A\ns6,B\n' >"$tmpdir/csg.csv"
+"$CINDERPLOT" "$tmpdir/csm.csv + heatmap(name=\"m\", cluster=both, colsplit=\"grp\") + annotation(\"$tmpdir/csg.csv\", top_of(\"m\", height=0.1), name=\"grp\") + dendrogram(top_of(\"grp\"))" \
+    -o "$tmpdir/cs.svg" --size 4x3 2>"$tmpdir/err"
+! grep -q 'more than one run' "$tmpdir/err" || { echo "split blocks still interleave" >&2; exit 1; }
+svgnorm "$tmpdir/cs.svg"
+# one boundary, painted over the heatmap and the band: two gap rects
+test "$(grep -c 'fill="rgb(100%, 100%, 100%)"' "$tmpdir/cs.svg")" -eq 2 || { echo "expected one split boundary" >&2; exit 1; }
+# two 3-leaf trees: 2 merges each x 3 strokes = 12; a single tree over all
+# six leaves would draw 5 merges = 15 strokes
+test "$(grep -c 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/cs.svg")" -eq 12 || { echo "dendrogram is not one tree per block" >&2; exit 1; }
+
+# ---- C15v: an annotation bar draws one rect per run, not per cell ----
+# a 2000-row bar in two blocks drew 2000 one-pixel paths (a 1 MB SVG, and
+# antialiasing seams that washed out the colours); equal neighbours merge
+printf 'probe,s1,s2\n' >"$tmpdir/rvm.csv"
+printf 'probe,dir\n' >"$tmpdir/rva.csv"
+i=1; while [ $i -le 40 ]; do
+    printf 'r%d,0.%d,0.5\n' $i $((i % 10)) >>"$tmpdir/rvm.csv"
+    if [ $i -le 25 ]; then d=hyper; else d=hypo; fi
+    printf 'r%d,%s\n' $i $d >>"$tmpdir/rva.csv"
+    i=$((i + 1))
+done
+"$CINDERPLOT" "$tmpdir/rvm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/rva.csv\", left_of(\"m\"), values=c(hyper=\"#ff0000\", hypo=\"#0000ff\"))" \
+    -o "$tmpdir/rv.svg" --size 3x4
+svgnorm "$tmpdir/rv.svg"
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/rv.svg")" -eq 1 || { echo "hyper run not one rect" >&2; exit 1; }
+test "$(grep -c 'fill="rgb(0%, 0%, 100%)"' "$tmpdir/rv.svg")" -eq 1 || { echo "hypo run not one rect" >&2; exit 1; }
+
+# ---- C15w: aes(reorder(x, v)) orders levels; per panel under free x ----
+# reorder() was refused; a freed facet axis now sorts each panel's levels by
+# that panel's own rows (mean by default, as base R), -v sorts largest first
+printf 'f,g,v\nP,a,3\nP,b,1\nP,c,2\nQ,a,1\nQ,b,3\nQ,c,2\nQ,d,9\n' >"$tmpdir/ro.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/ro.csv + aes(reorder(g, v), v) + geom_col() + facet_wrap(~f, scales=\"free_x\")" \
+    -o "$tmpdir/ro.svg" --size 4x3
+test "$(grep -o '>[a-d]</text>' "$tmpdir/ro.svg" | tr -d '<>/text\n')" = bcaacbd \
+    || { echo "reorder() per-panel order wrong" >&2; exit 1; }
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/ro.csv + aes(reorder(g, -v), v) + geom_col()" \
+    -o "$tmpdir/ro2.svg" --size 4x3
+test "$(grep -o '>[a-d]</text>' "$tmpdir/ro2.svg" | tr -d '<>/text\n')" = dabc \
+    || { echo "reorder(g, -v) global order wrong" >&2; exit 1; }
+
+# ---- C15x: facet space="free_x" sizes panels by their axis range ----
+# panels were always equal width, so 3 categories got wider slots than 4;
+# with space="free_x" the category pitch is the same in both panels
+printf 'f,g,v\nP,a,3\nP,b,1\nP,c,2\nQ,a,1\nQ,b,3\nQ,c,2\nQ,d,9\n' >"$tmpdir/fsp.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/fsp.csv + aes(g, v) + geom_col() + facet_wrap(~f, scales=\"free_x\", space=\"free_x\")" \
+    -o "$tmpdir/fsp.svg" --size 4x3
+grep -o 'x="[0-9.]*"[^>]*>[a-d]</text>' "$tmpdir/fsp.svg" | sed 's/x="\([0-9.]*\)".*/\1/' \
+    | awk 'NR > 1 { d[NR] = $1 - p } { p = $1 }
+           END { a = d[2]; b = d[5]; exit !(a > 0 && b > 0 && a - b < 0.5 && b - a < 0.5) }' \
+    || { echo "space=free_x pitch differs between panels" >&2; exit 1; }
+
+# ---- C15y: geom_boxplot(linewidth=, fatten=) set the box strokes ----
+# linewidth= was refused on boxplot; outline and whiskers now take it, the
+# median is linewidth x fatten (ggplot's 2). Counted against the default
+# render, so the chrome's widths cancel out: 0.25 moves the three 1.07 px box
+# strokes to 0.53 px and the 2.13 px median to 1.07 px
+printf 'g,y\na,1\na,2\na,3\na,4\na,9\n' >"$tmpdir/blw.csv"
+blw() { "$CINDERPLOT" "$tmpdir/blw.csv + aes(g, y) + geom_boxplot($1) + theme_classic()" \
+            -o "$tmpdir/blw$2.svg" --size 3x3; }
+nw() { grep -c "stroke-width=\"$1" "$tmpdir/blw$2.svg" || true; }
+blw "" 0
+blw "linewidth=0.25" 1
+blw "linewidth=0.25, fatten=1" 2
+test "$(nw 2.13 0)" -eq 1 && test "$(nw 2.13 1)" -eq 0 \
+    || { echo "boxplot median width not set by linewidth=" >&2; exit 1; }
+test "$(nw 0.53 1)" -eq $(( $(nw 0.53 0) + 3 )) \
+    || { echo "boxplot outline/whiskers not set by linewidth=" >&2; exit 1; }
+test "$(nw 0.53 2)" -eq $(( $(nw 0.53 0) + 4 )) \
+    || { echo "boxplot fatten=1 not applied" >&2; exit 1; }
+
+# ---- C15z: theme(legend.key.size=, legend.key.spacing.y=) ----
+# the key cell was a fixed 17.3 pt (ggplot's 1.2 lines, which ignores
+# base_size), so a small-font legend stayed loosely spaced; unit(10, "pt")
+# keys put the a -> c labels 2 x (9.96 + 2.2) pt apart, and spacing.y=0 drops
+# the 2.2 pt row gap
+printf 'x,y,g\n1,1,a\n2,2,b\n3,3,c\n' >"$tmpdir/lk.csv"
+lk() { CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/lk.csv + aes(x, y, colour=g) + geom_point() + theme($1)" \
+           -o "$tmpdir/lk.svg" --size 3x3
+       grep -o 'y="[0-9.]*"[^>]*>[ac]</text>' "$tmpdir/lk.svg" | sed 's/y="\([0-9.]*\)".*/\1/' \
+           | awk -v want="$2" 'NR == 1 { a = $1 } NR == 2 { d = $1 - a - want; ok = d < 0.3 && d > -0.3 }
+                                END { exit !ok }'; }
+lk 'legend.key.size=unit(10, "pt")' 24.33 || { echo "legend.key.size= not applied" >&2; exit 1; }
+lk 'legend.key.size=unit(10, "pt"), legend.key.spacing.y=unit(0, "pt")' 19.93 \
+    || { echo "legend.key.spacing.y= not applied" >&2; exit 1; }
+
+# ---- C15za: facet_wrap(space="free_x") sizes each ROW on its own ----
+# with several rows the columns took their widest panel, so a 2x2 wrap of
+# 3|1 over 1|3 categories drew four equal panels; now row 1 is 3:1 and row 2
+# 1:3, which puts the lone row-1 label `d` far right of row 2's first `f`
+printf 'f,g,v\nA,a,1\nA,b,2\nA,c,3\nB,d,1\nC,e,1\nD,f,1\nD,g,2\nD,h,3\n' >"$tmpdir/spr2.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/spr2.csv + aes(g, v) + geom_col() + facet_wrap(~f, scales=\"free_x\", space=\"free_x\", ncol=2)" \
+    -o "$tmpdir/spr2.svg" --size 4x4
+grep -o 'x="[0-9.]*"[^>]*>[a-h]</text>' "$tmpdir/spr2.svg" \
+    | sed 's/x="\([0-9.]*\)".*>\([a-h]\)<.*/\2 \1/' \
+    | awk '{ x[$1] = $2 } END { p = x["b"] - x["a"]; d = x["d"] - x["f"];
+           exit !(p > 0 && d / p > 1.5) }' \
+    || { echo "space=free_x did not size rows independently" >&2; exit 1; }
+
+# ---- C15zb: layer aes() on geom_errorbar / geom_errorbarh ----
+# both bar directions from one point table: aes(ymin=, ymax=) on errorbar and
+# aes(xmin=, xmax=) on errorbarh (layer aes was refused); the layer ranges
+# train the axes, so xlo = -10 and yhi = 20 reach the tick labels
+printf 'x,y,xlo,xhi,ylo,yhi\n1,1,-10,2,0,2\n2,2,1,3,1,20\n3,3,2,4,2,4\n' >"$tmpdir/eb2.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/eb2.csv + aes(x, y) + geom_point() + geom_errorbar(aes(ymin=ylo, ymax=yhi), width=0.2) + geom_errorbarh(aes(xmin=xlo, xmax=xhi), height=0.5)" \
+    -o "$tmpdir/eb2.svg" --size 3x3
+grep '>-10</text>' "$tmpdir/eb2.svg" >/dev/null || { echo "errorbarh xmin did not train x" >&2; exit 1; }
+grep '>20</text>' "$tmpdir/eb2.svg" >/dev/null || { echo "errorbar layer ymax did not train y" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/eb2.csv + aes(x, y) + geom_errorbar(aes(xmin=xlo, ymax=yhi))" \
+        -o "$tmpdir/eb2b.svg" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "mixed x/y range aes unexpectedly succeeded" >&2; exit 1
+fi
+grep 'one per direction' "$tmpdir/err" >/dev/null
+
+# ---- C15zc: theme(strip.text=element_text(size=)) ----
+# strips were fixed at ggplot's rel(0.8) of base_size (6.4 pt at base 8) with
+# no override; size=N is points, rel(r) scales base_size, .y the grid row strip
+printf 'x,y,f,h\n1,1,P,u\n2,2,Q,v\n' >"$tmpdir/stx.csv"
+st() { CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/stx.csv + aes(x, y) + geom_point() + $1 + theme_bw(base_size=8)$2" \
+           -o "$tmpdir/stx.svg" --size 3x3; }
+st 'facet_wrap(~f)' ' + theme(strip.text=element_text(size=8))'
+grep 'font-size="8.00"[^>]*>P</text>' "$tmpdir/stx.svg" >/dev/null || { echo "strip.text size= not applied" >&2; exit 1; }
+st 'facet_wrap(~f)' ' + theme(strip.text=element_text(size=rel(1.2)))'
+grep 'font-size="9.60"[^>]*>P</text>' "$tmpdir/stx.svg" >/dev/null || { echo "strip.text rel() not applied" >&2; exit 1; }
+st 'facet_grid(h ~ f)' ' + theme(strip.text.y=element_text(size=10))'
+grep 'font-size="10.00"[^>]*>u</text>' "$tmpdir/stx.svg" >/dev/null || { echo "strip.text.y not applied" >&2; exit 1; }
+grep 'font-size="6.40"[^>]*>P</text>' "$tmpdir/stx.svg" >/dev/null || { echo "strip.text.y changed the top strips" >&2; exit 1; }
+
+# ---- C15zd: venn() -- a two-set Venn listing items with per-sample dots ----
+# a new mode: one row per (item, set) membership with a count; regions list
+# their items, the overlap puts set A's dots left and B's right, subtitle=
+# substitutes {k} items and {n} samples, titles are bold; 4 sets refused
+printf 'item\tset\tn\tcolour\nalpha\tA\t3\t#ff0000\nbeta\tA\t2\t#00ff00\nbeta\tB\t4\t#00ff00\ngamma\tB\t1\t#0000ff\n' >"$tmpdir/vn.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "venn(\"$tmpdir/vn.tsv\", sets=c(\"A\",\"B\"), subtitle=c(\"{k} kinds, {n} runs\"), labels=c(beta=\"Beta\"))" \
+    -o "$tmpdir/vn.svg"
+grep 'font-weight="bold"[^>]*>A</text>' "$tmpdir/vn.svg" >/dev/null || { echo "venn set title missing/not bold" >&2; exit 1; }
+grep '>2 kinds, 5 runs</text>' "$tmpdir/vn.svg" >/dev/null || { echo "venn subtitle substitution wrong" >&2; exit 1; }
+grep '>2 items · 5 samples</text>' "$tmpdir/vn.svg" >/dev/null || { echo "venn default subtitle wrong" >&2; exit 1; }
+grep '>Beta</text>' "$tmpdir/vn.svg" >/dev/null || { echo "venn labels= not applied" >&2; exit 1; }
+# 3 + 2 + 4 + 1 = 10 sample dots, each its own colour run
+test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/vn.svg")" -ge 1
+printf 'item\tset\na\tA\nb\tB\nc\tC\nd\tD\n' >"$tmpdir/vn4.tsv"
+if "$CINDERPLOT" "venn(\"$tmpdir/vn4.tsv\")" -o "$tmpdir/vn4.svg" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "4-set venn unexpectedly succeeded" >&2; exit 1
+fi
+grep 'not implemented' "$tmpdir/err" >/dev/null
+
+# ---- C15ze: filled points -- fill= body, colour= outline, free_colour ramps -
+# fill= and colour= were one aesthetic, so a point could not carry a discrete
+# fill and a continuous outline; geom_point(shape=21) now takes both (stroke=
+# 0.9 -> 1.28 pt), with a fill key, and scales=c("free", "free_colour") gives
+# each facet its own colourbar (titled by the facet: P and Q twice each)
+printf 'x,y,g,v,f\n1,1,a,10,P\n2,2,b,20,P\n1,2,a,0.5,Q\n2,1,b,1.5,Q\n' >"$tmpdir/pf.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/pf.csv + aes(x, y, fill=g, colour=v) + geom_point(shape=21, stroke=0.9) + scale_fill_manual(values=c(a=\"#ff0000\", b=\"#0000ff\")) + facet_wrap(~f, scales=c(\"free\", \"free_colour\"))" \
+    -o "$tmpdir/pf.svg" --size 5x3
+test "$(grep -c 'stroke-width="1.27' "$tmpdir/pf.svg")" -eq 4 || { echo "shape=21 outline (stroke=) missing" >&2; exit 1; }
+grep 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/pf.svg" >/dev/null || { echo "shape=21 fill= body missing" >&2; exit 1; }
+grep '>g</text>' "$tmpdir/pf.svg" >/dev/null || { echo "fill legend missing" >&2; exit 1; }
+test "$(grep -c '>Q</text>' "$tmpdir/pf.svg")" -eq 2 || { echo "per-facet colourbar missing" >&2; exit 1; }
+# without a filled glyph the two keys still collide, and the message says why
+if "$CINDERPLOT" "$tmpdir/pf.csv + aes(x, y, fill=g, colour=v) + geom_point()" \
+        -o "$tmpdir/pf2.svg" >"$tmpdir/out" 2>"$tmpdir/err"; then
+    echo "fill= + colour= without shape=21 unexpectedly succeeded" >&2; exit 1
+fi
+grep 'shape=21' "$tmpdir/err" >/dev/null
+
+# ---- C15zf: venn() with three sets ----
+# three circles, seven regions; an item's dot runs come one per member set,
+# each dot filled in the item colour and outlined (0.9 pt) in its set colour
+printf 'item\tset\tn\nonly_a\tA\t2\nab\tA\t1\nab\tB\t2\nabc\tA\t1\nabc\tB\t1\nabc\tC\t3\nonly_c\tC\t1\n' >"$tmpdir/v3.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "venn(\"$tmpdir/v3.tsv\", sets=c(\"A\",\"B\",\"C\"))" -o "$tmpdir/v3.svg"
+grep 'font-weight="bold"[^>]*>C</text>' "$tmpdir/v3.svg" >/dev/null || { echo "3-set venn: third title missing" >&2; exit 1; }
+grep '>abc</text>' "$tmpdir/v3.svg" >/dev/null || { echo "3-set venn: triple-overlap item missing" >&2; exit 1; }
+# 2 + 3 + 5 + 1 = 11 outlined dots
+test "$(grep -c 'stroke-width="0.9"' "$tmpdir/v3.svg")" -eq 11 || { echo "3-set venn: outlined dot count wrong" >&2; exit 1; }
+
+# ---- C15zg: guides(colour=guide_colourbar(direction=, barwidth=, barheight=))
+# a colourbar was a fixed 12 x 80 pt vertical bar; direction="horizontal"
+# lays it flat (its labels then share one baseline) and barwidth=/barheight=
+# size it in lines (or unit())
+printf 'x,y,v\n1,1,15\n2,2,25\n3,3,35\n4,4,45\n' >"$tmpdir/cbh.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/cbh.csv + aes(x, y, colour=v) + geom_point() + guides(colour=guide_colourbar(direction=\"horizontal\", barwidth=6, barheight=0.5))" \
+    -o "$tmpdir/cbh.svg" --size 4x3
+test "$(grep -o 'y="[0-9.]*"[^>]*>[1-4]5</text>' "$tmpdir/cbh.svg" | sed 's/y="\([0-9.]*\)".*/\1/' | sort -u | wc -l)" -eq 1 \
+    || { echo "horizontal colourbar labels not on one line" >&2; exit 1; }
+test "$(grep -c '>[1-4]5</text>' "$tmpdir/cbh.svg")" -eq 4 || { echo "colourbar labels missing" >&2; exit 1; }
+
+# ---- C15zh: venn() subtitle="" / captions=FALSE / shape= with a key ----
+# subtitle=c("","") was "bad value in levels=", captions had no switch and
+# shape= was refused; now the grey line and the overlap captions drop, and
+# each (item, set, shape) row draws its dots in its glyph with a shape key
+printf 'item\tset\tshape\tn\na\tA\tm\t2\nb\tA\tm\t1\nb\tB\tm\t1\nb\tB\tx\t2\nc\tB\tx\t1\n' >"$tmpdir/vs.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "venn(\"$tmpdir/vs.tsv\", shape=shape, sets=c(\"A\",\"B\"), subtitle=c(\"\",\"\"), captions=FALSE) + scale_shape_manual(values=c(m=16, x=15))" \
+    -o "$tmpdir/vs.svg"
+grep 'items' "$tmpdir/vs.svg" >/dev/null && { echo "venn subtitle not dropped" >&2; exit 1; }
+test "$(grep -c '>B</text>' "$tmpdir/vs.svg")" -eq 1 || { echo "venn overlap caption not dropped" >&2; exit 1; }
+grep '>m</text>' "$tmpdir/vs.svg" >/dev/null && grep '>x</text>' "$tmpdir/vs.svg" >/dev/null \
+    || { echo "venn shape key missing" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
@@ -3258,7 +3463,7 @@ chk() {   # chk <spec-tail> <expected stderr fragment>
     grep -- "$2" "$tmpdir/err" >/dev/null || { echo "'$1': message lacks '$2':" >&2; cat "$tmpdir/err" >&2; exit 1; }
 }
 chk "aes(as.factor(g), y) + geom_boxplot()" 'use factor(col)'
-chk "aes(reorder(g, y), y) + geom_boxplot()" 'levels=c('
+chk "aes(fct_rev(g), y) + geom_boxplot()" 'levels=c('
 chk "aes(log10(x), y) + geom_point()" 'scale_x_log10()'
 chk "aes(x/y, y) + geom_point()" 'arithmetic'
 chk "aes(x, y) + geom_point(aes(colour=g))" 'top-level aes()'
@@ -3273,7 +3478,7 @@ fi
 if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y) + nope()" -o "$tmpdir/d9.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
     echo "nope() unexpectedly succeeded" >&2; exit 1
 fi
-for v in 'chord()' 'smooth' 'annotate()' 'coord_flip/polar' 'brewer' 'ideogram()' 'geom_tree' 'ggplot()'; do
+for v in 'chord()' 'venn()' 'smooth' 'annotate()' 'coord_flip/polar' 'brewer' 'ideogram()' 'geom_tree' 'ggplot()'; do
     grep -F -- "$v" "$tmpdir/err" >/dev/null || { echo "menu lacks $v" >&2; exit 1; }
 done
 if "$CINDERPLOT" "region(\"chr1:1-100\") + matrix(\"$tmpdir/nw.tsv\", nope=1)" -o "$tmpdir/d9b.pdf" \
@@ -3285,10 +3490,11 @@ if "$CINDERPLOT" "$tmpdir/mat.tsv + heatmap(nope=1)" -o "$tmpdir/d9c.pdf" >"$tmp
     echo "heatmap(nope=) unexpectedly succeeded" >&2; exit 1
 fi
 grep 'title=' "$tmpdir/err" >/dev/null
-# --help: five modes with a chord row, the fuller geom line, -r documented
+# --help: six modes with chord and venn rows, the fuller geom line, -r documented
 "$CINDERPLOT" --help >"$tmpdir/help"
-grep 'FIVE MODES' "$tmpdir/help" >/dev/null
+grep 'SIX MODES' "$tmpdir/help" >/dev/null
 grep 'chord(' "$tmpdir/help" >/dev/null
+grep 'venn(' "$tmpdir/help" >/dev/null
 grep 'errorbar' "$tmpdir/help" >/dev/null
 grep -- '-r, --region' "$tmpdir/help" >/dev/null
 
