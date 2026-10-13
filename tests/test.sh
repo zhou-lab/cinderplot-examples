@@ -3196,6 +3196,49 @@ test "$(grep -c '>B</text>' "$tmpdir/vs.svg")" -eq 1 || { echo "venn overlap cap
 grep '>m</text>' "$tmpdir/vs.svg" >/dev/null && grep '>x</text>' "$tmpdir/vs.svg" >/dev/null \
     || { echo "venn shape key missing" >&2; exit 1; }
 
+# ---- C15zi: venn(dot_size=, dot_step=) -- text larger against the diagram -
+# everything scaled with base_size, so text could not grow relative to the
+# fitted ellipses; smaller dots/steps shrink the geometry at the same font
+printf 'item\tset\tn\na\tA\t12\nb\tA\t6\nb\tB\t12\nc\tB\t9\n' >"$tmpdir/vd.tsv"
+"$CINDERPLOT" "venn(\"$tmpdir/vd.tsv\")" -o "$tmpdir/vd1.svg"
+"$CINDERPLOT" "venn(\"$tmpdir/vd.tsv\", dot_size=0.7, dot_step=0.6)" -o "$tmpdir/vd2.svg"
+w1=$(grep -o '<svg[^>]*' "$tmpdir/vd1.svg" | sed 's/.* width="\([0-9.]*\).*/\1/')
+w2=$(grep -o '<svg[^>]*' "$tmpdir/vd2.svg" | sed 's/.* width="\([0-9.]*\).*/\1/')
+awk -v a="$w1" -v b="$w2" 'BEGIN { exit !(b < 0.9 * a) }' \
+    || { echo "venn dot_step= did not tighten the diagram ($w1 -> $w2)" >&2; exit 1; }
+
+# ---- C15zj: venn() -- guides(shape="none"), per-side widths, ncol= ----
+# the shape key ignored guides(shape="none"); both ellipses shared one width,
+# so shortening one side's labels left the canvas unchanged; a 10-item region
+# set the height with no way to wrap it. Now: key hidden, the A side narrows
+# with its labels, and ncol=2 makes the diagram shorter
+vjw() { grep -o '<svg[^>]*' "$1" | sed "s/.* $2=\"\([0-9.]*\).*/\1/"; }
+printf 'item\tset\tshape\nlong_label_one\tA\tm\nlong_label_two\tA\tm\nboth\tA\tm\nboth\tB\tx\n' >"$tmpdir/vk1.tsv"
+i=1; while [ $i -le 10 ]; do printf 'b%d\tB\tm\n' $i >>"$tmpdir/vk1.tsv"; i=$((i + 1)); done
+sed 's/long_label_/s/' "$tmpdir/vk1.tsv" >"$tmpdir/vk2.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "venn(\"$tmpdir/vk1.tsv\", shape=shape) + guides(shape=\"none\")" -o "$tmpdir/vk1.svg"
+grep '>x</text>' "$tmpdir/vk1.svg" >/dev/null && { echo "venn shape key not hidden by guides()" >&2; exit 1; }
+"$CINDERPLOT" "venn(\"$tmpdir/vk2.tsv\", shape=shape)" -o "$tmpdir/vk2.svg"
+awk -v a="$(vjw "$tmpdir/vk1.svg" width)" -v b="$(vjw "$tmpdir/vk2.svg" width)" 'BEGIN { exit !(b < a - 10) }' \
+    || { echo "venn: shorter labels did not narrow the canvas" >&2; exit 1; }
+"$CINDERPLOT" "venn(\"$tmpdir/vk1.tsv\", shape=shape, ncol=2)" -o "$tmpdir/vk3.svg"
+awk -v a="$(vjw "$tmpdir/vk1.svg" height)" -v b="$(vjw "$tmpdir/vk3.svg" height)" 'BEGIN { exit !(b < a - 10) }' \
+    || { echo "venn ncol=2 did not shorten the diagram" >&2; exit 1; }
+
+# ---- C15zk: venn() outline= / fill= apart from set_colours= ----
+# set_colours= painted edge, title and a 0.07 wash together, so black edges
+# meant grey interiors. outline= now colours the edge alone, fill="none"
+# drops the wash, and fill=/fill_alpha= recolour it
+printf 'item\tset\na\tA\nb\tA\nb\tB\nc\tB\n' >"$tmpdir/vf.tsv"
+"$CINDERPLOT" "venn(\"$tmpdir/vf.tsv\", outline=\"black\", fill=\"none\")" -o "$tmpdir/vf1.svg"
+grep -c 'fill-opacity="0.07' "$tmpdir/vf1.svg" | grep -qx 0 \
+    || { echo "venn fill=\"none\" still drew a translucent fill" >&2; exit 1; }
+[ "$(grep -c 'fill="none"[^>]*stroke="rgb(0%, 0%, 0%)"' "$tmpdir/vf1.svg")" -ge 2 ] \
+    || { echo "venn outline=\"black\" did not draw two black edges" >&2; exit 1; }
+"$CINDERPLOT" "venn(\"$tmpdir/vf.tsv\", fill=\"white\", fill_alpha=0.5)" -o "$tmpdir/vf2.svg"
+[ "$(grep -c 'fill="rgb(100%, 100%, 100%)"[^>]*fill-opacity="0.5' "$tmpdir/vf2.svg")" -ge 2 ] \
+    || { echo "venn fill=\"white\", fill_alpha=0.5 not applied" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
