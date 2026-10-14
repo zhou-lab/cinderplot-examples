@@ -3239,6 +3239,132 @@ grep -c 'fill-opacity="0.07' "$tmpdir/vf1.svg" | grep -qx 0 \
 [ "$(grep -c 'fill="rgb(100%, 100%, 100%)"[^>]*fill-opacity="0.5' "$tmpdir/vf2.svg")" -ge 2 ] \
     || { echo "venn fill=\"white\", fill_alpha=0.5 not applied" >&2; exit 1; }
 
+# ---- C15zl: theme(legend.text=element_text(size=)) ----
+# legend labels were fixed at the axis-text size (0.8 x base_size; venn's
+# glyph key 0.88 x) with no theme handle; the venn key and a grammar legend
+# now take the size, in pt or rel()
+printf 'item\tset\tshape\na\tA\tm\nb\tA\tx\nb\tB\tm\n' >"$tmpdir/vt.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "venn(\"$tmpdir/vt.tsv\", shape=shape) + theme(legend.text=element_text(size=13))" -o "$tmpdir/vt.svg"
+grep -q 'font-size="13[.0-9]*"[^>]*>x</text>' "$tmpdir/vt.svg" \
+    || { echo "venn key ignored theme(legend.text=)" >&2; exit 1; }
+printf 'x,y,g\n1,1,alpha\n2,2,beta\n' >"$tmpdir/lt.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/lt.csv + aes(x,y,colour=g) + geom_point() + theme(legend.text=element_text(size=rel(1.5)))" -o "$tmpdir/lt.svg"
+grep -q 'font-size="16.5[0-9]*"[^>]*>beta</text>' "$tmpdir/lt.svg" \
+    || { echo "legend labels ignored theme(legend.text=rel(1.5))" >&2; exit 1; }
+
+# ---- C15zm: geom_segment/geom_line(arrow=arrow()) ----
+# arrow= was refused ("layer option not implemented"); a head is now drawn
+# at the end point, on the main-data and the data= segment paths alike (each
+# head adds paths: a stroke, plus a fill when closed, under the panel clip)
+printf 'x,y,xend,yend\n0,0,1,1\n' >"$tmpdir/ar.csv"
+npath() { grep -c '<path' "$1"; }
+"$CINDERPLOT" "$tmpdir/ar.csv + aes(x,y,xend=xend,yend=yend) + geom_segment()" -o "$tmpdir/ar0.svg"
+"$CINDERPLOT" "$tmpdir/ar.csv + aes(x,y,xend=xend,yend=yend) + geom_segment(arrow=arrow())" -o "$tmpdir/ar1.svg"
+"$CINDERPLOT" "$tmpdir/ar.csv + aes(x,y,xend=xend,yend=yend) + geom_segment(arrow=arrow(length=unit(4, \"pt\"), type=\"closed\", ends=\"both\"))" -o "$tmpdir/ar2.svg"
+[ "$(npath "$tmpdir/ar1.svg")" -gt "$(npath "$tmpdir/ar0.svg")" ] \
+    || { echo "geom_segment(arrow=arrow()) drew no open head" >&2; exit 1; }
+[ $(($(npath "$tmpdir/ar2.svg") - $(npath "$tmpdir/ar0.svg"))) -gt \
+  $((2 * ($(npath "$tmpdir/ar1.svg") - $(npath "$tmpdir/ar0.svg")))) ] \
+    || { echo "closed heads at both ends not drawn" >&2; exit 1; }
+printf 'x,y,xend,yend\n0,0,0,0\n1,1,1,1\n' >"$tmpdir/arm.csv"
+"$CINDERPLOT" "$tmpdir/arm.csv + aes(x,y,xend=xend,yend=yend) + geom_point() + geom_segment(data=\"$tmpdir/ar.csv\")" -o "$tmpdir/ar3.svg"
+"$CINDERPLOT" "$tmpdir/arm.csv + aes(x,y,xend=xend,yend=yend) + geom_point() + geom_segment(data=\"$tmpdir/ar.csv\", arrow=arrow(type=\"closed\"))" -o "$tmpdir/ar4.svg"
+[ "$(npath "$tmpdir/ar4.svg")" -gt "$(npath "$tmpdir/ar3.svg")" ] \
+    || { echo "geom_segment(data=, arrow=) drew no head" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/ar.csv + aes(x,y,xend=xend,yend=yend) + geom_segment(arrow=arrow(type=\"bent\"))" -o "$tmpdir/ar5.svg" 2>"$tmpdir/ar5.err" \
+    && { echo "arrow(type=\"bent\") was accepted" >&2; exit 1; }
+grep -q 'arrow(type=) expects' "$tmpdir/ar5.err"
+
+# ---- C15zn: heatmap row names wider than a fixed --size ----
+# a ~110-char row name in a 4in-wide figure left the body a negative width:
+# "cairo: invalid matrix" (or a figure with a negative canvas) behind a
+# stacked-panel warning reporting 0.0in. The body now keeps a floor share,
+# and the warning names the label width and a --size that fits
+L=$(printf 'r%0110d' 0)
+printf 'id\tc1\tc2\n%s\t0.1\t0.9\nshort\t0.5\t0.2\n' "$L" >"$tmpdir/hl.tsv"
+"$CINDERPLOT" "$tmpdir/hl.tsv + heatmap(rownames=right, colnames=none)" -o "$tmpdir/hl.svg" --size 4x3 2>"$tmpdir/hl.err" \
+    || { echo "long row names under --size failed to render" >&2; cat "$tmpdir/hl.err" >&2; exit 1; }
+grep -q 'labels between stacked panels' "$tmpdir/hl.err" \
+    && { echo "long row names: bogus stacked-panel warning" >&2; exit 1; }
+grep -q 'names and legends around the heatmap want' "$tmpdir/hl.err" \
+    || { echo "long row names: no warning naming the label width" >&2; exit 1; }
+
+# ---- C15zo: scale_fill_*(limits=) on a track-mode matrix() ----
+# the track matrix mapped cells and its colourbar over a fixed 0..1, so
+# limits=c(0,0.4) for a 5hmC track was ignored (heatmap mode honoured it);
+# now cells, colourbar width and breaks follow the limits
+printf 'chrom\tstart\tend\tProbe_ID\ts1\ts2\nchr1\t110\t111\tp\t0.1\t0.3\n' >"$tmpdir/tl.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "region(\"chr1:100-200\") + matrix(\"$tmpdir/tl.tsv\") + scale_fill_parula(limits=c(0,0.3)) + legend()" -o "$tmpdir/tl1.svg"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "region(\"chr1:100-200\") + matrix(\"$tmpdir/tl.tsv\") + legend()" -o "$tmpdir/tl0.svg"
+grep -q '>0.3</text>' "$tmpdir/tl1.svg" && ! grep -q '>1.00</text>' "$tmpdir/tl1.svg" \
+    || { echo "track matrix colourbar ignored limits=" >&2; exit 1; }
+# the cells are an embedded raster image: its pixels change with the domain
+[ "$(grep -o '<image[^>]*' "$tmpdir/tl1.svg")" != "$(grep -o '<image[^>]*' "$tmpdir/tl0.svg")" ] \
+    || { echo "track matrix cells ignored limits=" >&2; exit 1; }
+
+# ---- C15zp: scale_fill_*(breaks=, labels=) on a colourbar ----
+# breaks= was read as a colour ("bad colour for `breaks`"); now the user's
+# ticks and labels replace the automatic ones on every colourbar (grammar,
+# heatmap, track), and labels= without breaks= or of another length errors
+printf 'x,y,n\na,p,1\nb,q,7\n' >"$tmpdir/bl.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/bl.csv + aes(x,y,fill=n) + geom_tile() + scale_fill_gradient(limits=c(0,5), breaks=c(0,5), labels=c(\"0\",\">=5\"))" -o "$tmpdir/bl.svg"
+grep -q '>&gt;=5</text>' "$tmpdir/bl.svg" && ! grep -q '>2.5</text>' "$tmpdir/bl.svg" \
+    || { echo "colourbar ignored breaks=/labels=" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/bl.csv + aes(x,y,fill=n) + geom_tile() + scale_fill_viridis(labels=c(\"a\"))" -o "$tmpdir/bl2.svg" 2>"$tmpdir/bl2.err" \
+    && { echo "labels= without breaks= was accepted" >&2; exit 1; }
+grep -q 'give breaks=' "$tmpdir/bl2.err"
+"$CINDERPLOT" "$tmpdir/bl.csv + aes(x,y,fill=n) + geom_tile() + scale_fill_viridis(breaks=c(1,2), labels=c(\"a\"))" -o "$tmpdir/bl3.svg" 2>"$tmpdir/bl3.err" \
+    && { echo "breaks=/labels= of different lengths were accepted" >&2; exit 1; }
+grep -q 'differ in length' "$tmpdir/bl3.err"
+printf 'id\ta\tb\nr1\t0.1\t0.9\nr2\t0.5\t0.3\n' >"$tmpdir/blm.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/blm.tsv + heatmap(name=\"m\") + legend(right_of(\"m\")) + scale_fill_parula(breaks=c(0.2,0.8), labels=c(\"low\",\"high\"))" -o "$tmpdir/blm.svg"
+grep -q '>high</text>' "$tmpdir/blm.svg" || { echo "heatmap colourbar ignored labels=" >&2; exit 1; }
+
+# ---- C15zq: upset() mode ----
+# UpSetR's plot was missing ("`upset()` is not implemented"): intersection
+# bars over a set-membership dot matrix. Bars follow n (file order, or
+# order="n"), fill= colours them through scale_fill_manual, max= keeps the
+# top N, a member is a dark dot, and two sizes for one intersection error
+printf 'pattern\tset\tn\tdir\nP1\tA\t10\thypo\nP1\tB\t10\thypo\nP2\tB\t30\thyper\nP2\tC\t30\thyper\nP3\tA\t5\thypo\n' >"$tmpdir/up.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "upset(\"$tmpdir/up.tsv\", intersection=pattern, set=set, n=n, fill=dir) + scale_fill_manual(values=c(hypo=\"#2C7FB8\", hyper=\"#D95F0E\"))" -o "$tmpdir/up.svg"
+for w in '>A</text>' '>B</text>' '>C</text>' '>hyper</text>' '>Intersection size</text>'; do
+    grep -q "$w" "$tmpdir/up.svg" || { echo "upset(): $w missing" >&2; exit 1; }
+done
+grep -q 'fill="rgb(85.098039%, 37.254902%, 5.490196%)"' "$tmpdir/up.svg" \
+    || { echo "upset(): fill= bar colour not applied" >&2; exit 1; }
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/up.tsv + upset(intersection=pattern, set=set, n=n, order=\"n\", max=2, set_size=TRUE)" -o "$tmpdir/up2.svg"
+grep -q '>Set size</text>' "$tmpdir/up2.svg" || { echo "upset(set_size=TRUE) drew no set-size axis" >&2; exit 1; }
+printf 'pattern\tset\tn\nP1\tA\t10\nP1\tB\t11\n' >"$tmpdir/upbad.tsv"
+"$CINDERPLOT" "upset(\"$tmpdir/upbad.tsv\", intersection=pattern)" -o "$tmpdir/upbad.svg" 2>"$tmpdir/upbad.err" \
+    && { echo "upset(): two sizes for one intersection accepted" >&2; exit 1; }
+grep -q 'has two sizes' "$tmpdir/upbad.err"
+
+# ---- C15zr: annotation(axis="y"[, side=][, show.legend=]) in grammar mode ----
+# a grammar annotation() keyed only on a discrete x ("option `axis` not
+# implemented"); now axis="y" draws a band beside the panel keyed by the y
+# categories (left between labels and cells, or side="right"), with its own
+# values=; show.legend=FALSE drops its key
+printf 'state\tsrc\tn\nr1\ta\t1\nr2\ta\t3\nr1\tb\t2\n' >"$tmpdir/yb.tsv"
+printf 'state\tkind\nr1\tK1\nr2\tK2\n' >"$tmpdir/ybm.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/yb.tsv + aes(x=src, y=state, fill=n) + geom_tile() + annotation(\"$tmpdir/ybm.tsv\", column=\"kind\", axis=\"y\", values=c(K1=\"#123456\", K2=\"#ABCDEF\"), show.legend=FALSE)" -o "$tmpdir/yb.svg"
+grep -q 'fill="rgb(7.058824%, 20.392157%, 33.72549%)"' "$tmpdir/yb.svg" \
+    || { echo "annotation(axis=y) band not drawn in its values= colours" >&2; exit 1; }
+grep -q '>kind</text>' "$tmpdir/yb.svg" && { echo "annotation(show.legend=FALSE) still drew its key" >&2; exit 1; }
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/yb.tsv + aes(x=src, y=state, fill=n) + geom_tile() + annotation(\"$tmpdir/ybm.tsv\", column=\"kind\", axis=\"y\", side=\"right\")" -o "$tmpdir/yb2.svg"
+grep -q '>kind</text>' "$tmpdir/yb2.svg" || { echo "annotation(axis=y, side=right) lost its key" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/yb.tsv + aes(x=src, y=n) + geom_point() + annotation(\"$tmpdir/ybm.tsv\", axis=\"y\")" -o "$tmpdir/yb3.svg" 2>"$tmpdir/yb3.err" \
+    && { echo "annotation(axis=y) on a continuous y was accepted" >&2; exit 1; }
+grep -q 'needs a discrete y' "$tmpdir/yb3.err"
+
+# ---- C15zs: upset() + labs(y=, fill=) ----
+# labs(fill=) was copied into the colour title (a grammar-mode alias), which
+# upset() then refused as a label with nothing to name; both titles now apply
+printf 'pattern\tset\tn\tdir\nP1\tA\t10\thypo\nP1\tB\t10\thypo\nP2\tB\t30\thyper\n' >"$tmpdir/upl.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/upl.tsv + upset(intersection=pattern, set=set, n=n, fill=dir) + labs(y=\"CpGs\", fill=\"Direction\")" -o "$tmpdir/upl.svg" \
+    || { echo "upset() refused labs(y=, fill=)" >&2; exit 1; }
+grep -q '>CpGs</text>' "$tmpdir/upl.svg" && grep -q '>Direction</text>' "$tmpdir/upl.svg" \
+    || { echo "upset() labs(y=, fill=) titles not drawn" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
@@ -3533,11 +3659,12 @@ if "$CINDERPLOT" "$tmpdir/mat.tsv + heatmap(nope=1)" -o "$tmpdir/d9c.pdf" >"$tmp
     echo "heatmap(nope=) unexpectedly succeeded" >&2; exit 1
 fi
 grep 'title=' "$tmpdir/err" >/dev/null
-# --help: six modes with chord and venn rows, the fuller geom line, -r documented
+# --help: seven modes with chord, venn and upset rows, the fuller geom line, -r documented
 "$CINDERPLOT" --help >"$tmpdir/help"
-grep 'SIX MODES' "$tmpdir/help" >/dev/null
+grep 'SEVEN MODES' "$tmpdir/help" >/dev/null
 grep 'chord(' "$tmpdir/help" >/dev/null
 grep 'venn(' "$tmpdir/help" >/dev/null
+grep 'upset(' "$tmpdir/help" >/dev/null
 grep 'errorbar' "$tmpdir/help" >/dev/null
 grep -- '-r, --region' "$tmpdir/help" >/dev/null
 
