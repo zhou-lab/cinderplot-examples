@@ -3365,6 +3365,53 @@ CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/upl.tsv + upset(intersection=pa
 grep -q '>CpGs</text>' "$tmpdir/upl.svg" && grep -q '>Direction</text>' "$tmpdir/upl.svg" \
     || { echo "upset() labs(y=, fill=) titles not drawn" >&2; exit 1; }
 
+# ---- C15zt: matrix(x=genomic) rasterizes above 2000 cells ----
+# every cell was a vector rect (42 x 2,911 CpGs = a 26 MB SVG); past the
+# heatmap's RASTER_MIN_CELLS the cells are one embedded image, and
+# raster=FALSE / raster=TRUE force either way
+awk 'BEGIN { OFS = "\t"; printf "chrom\tbeg\tend"
+             for (j = 1; j <= 30; j++) printf "\ts%d", j; print ""
+             for (i = 0; i < 100; i++) { printf "chr1\t%d\t%d", i * 10, i * 10 + 2
+               for (j = 1; j <= 30; j++) printf "\t%.2f", ((i * j) % 7) / 6; print "" } }' \
+    >"$tmpdir/gxr.tsv"
+for r in "" ", raster=FALSE"; do
+    "$CINDERPLOT" "region(\"chr1:0-1000\") + matrix(\"$tmpdir/gxr.tsv\", x=genomic$r)" \
+        -o "$tmpdir/gxr${r:+off}.svg" --size 6x4 >/dev/null
+done
+grep -q '<image' "$tmpdir/gxr.svg" \
+    || { echo "matrix(x=genomic) with 3000 cells was not rasterized" >&2; exit 1; }
+[ "$(grep -c '<path' "$tmpdir/gxr.svg")" -lt 200 ] \
+    || { echo "matrix(x=genomic) raster still drew vector cells" >&2; exit 1; }
+if grep -q '<image' "$tmpdir/gxroff.svg"; then
+    echo "matrix(x=genomic, raster=FALSE) still rasterized" >&2; exit 1
+fi
+printf 'chrom\tbeg\tend\ta\tb\nchr1\t10\t12\t0.2\t0.8\nchr1\t500\t502\t0.6\t0.4\n' \
+    >"$tmpdir/gxs.tsv"
+"$CINDERPLOT" "region(\"chr1:0-1000\") + matrix(\"$tmpdir/gxs.tsv\", x=genomic, raster=TRUE)" \
+    -o "$tmpdir/gxron.svg" >/dev/null
+grep -q '<image' "$tmpdir/gxron.svg" \
+    || { echo "matrix(x=genomic, raster=TRUE) not rasterized" >&2; exit 1; }
+
+# ---- C15zu: signal(style="bars") draws one bar per CpG ----
+# the focal-methylation view: a bar per row at its coordinate, height = value,
+# coloured by series (the focal CpG its own series); smooth= is refused
+printf 'chrom\tbeg\tend\tvalue\tsample\tseries\n' >"$tmpdir/sb.tsv"
+for smp in A B; do
+    printf 'chr1\t100\t102\t0.9\t%s\tother\nchr1\t500\t502\t0.5\t%s\tfocal\nchr1\t800\t802\t0.2\t%s\tother\n' \
+        "$smp" "$smp" "$smp" >>"$tmpdir/sb.tsv"
+done
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sb.tsv\", style=\"bars\", ylim=c(0, 1), colour=c(focal=\"#ff0000\", other=\"#0000ff\"))" \
+    -o "$tmpdir/sb.svg" --size 4x3 >/dev/null \
+    || { echo "signal(style=\"bars\") refused" >&2; exit 1; }
+[ "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/sb.svg")" -eq 2 ] \
+    || { echo "signal(style=\"bars\"): expected 2 focal bars" >&2; exit 1; }
+[ "$(grep -c 'fill="rgb(0%, 0%, 100%)"' "$tmpdir/sb.svg")" -eq 4 ] \
+    || { echo "signal(style=\"bars\"): expected 4 other bars" >&2; exit 1; }
+if "$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sb.tsv\", style=\"bars\", smooth=0.5)" \
+        -o "$tmpdir/sb2.svg" 2>/dev/null; then
+    echo "signal(style=\"bars\", smooth=) unexpectedly succeeded" >&2; exit 1
+fi
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
