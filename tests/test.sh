@@ -3523,6 +3523,24 @@ done
 grep -q 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/mm.svg" \
     || { echo "filled ring lost its colour= outline" >&2; exit 1; }
 
+# ---- C15zzb: dartboard labels: colour, spoke subset, ring levels= across files ----
+# labels were fixed axis-grey with theme(axis.text=) refused, every spoke was
+# named, a ring levels= was checked against the first file only, and ring
+# names that overran a narrow gap said nothing
+printf 'sp,ring,v,grp\nAlpha,in,a,g1\nBravo,in,b,g1\nCharlie,in,a,g2\n' >"$tmpdir/dl0.csv"
+printf 'sp,ring,v,grp\nAlpha,out,0.1,g1\nBravo,out,0.5,g1\nCharlie,out,0.9,g2\n' >"$tmpdir/dl1.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/dl0.csv + aes(x=factor(sp), y=factor(ring, levels=c(\"out\", \"in\")), group=grp) + geom_tile(aes(fill=v)) + new_scale_fill() + geom_tile(data=\"$tmpdir/dl1.csv\", aes(fill=v)) + coord_polar(gap=2) + scale_x_discrete(breaks=c(\"Alpha\", \"Bravo\"), labels=c(Bravo=\"B two\")) + theme_minimal() + theme(axis.text=element_text(colour=\"#000000\"))" \
+    -o "$tmpdir/dl.svg" --size 5x4 >/dev/null 2>"$tmpdir/dl.err" \
+    || { echo "ring levels= across files / axis.text / discrete breaks refused: $(cat "$tmpdir/dl.err")" >&2; exit 1; }
+grep -q '>Alpha</text>' "$tmpdir/dl.svg" && grep -q '>B two</text>' "$tmpdir/dl.svg" \
+    || { echo "chosen spokes not named as asked" >&2; exit 1; }
+if grep -q '>Charlie</text>' "$tmpdir/dl.svg"; then
+    echo "a spoke outside breaks= was named" >&2; exit 1; fi
+grep '>Alpha</text>' "$tmpdir/dl.svg" | grep -q 'fill="#000000"' \
+    || { echo "theme(axis.text=element_text(colour=)) ignored" >&2; exit 1; }
+grep -q 'ring names overlap the first spokes; gap=' "$tmpdir/dl.err" \
+    || { echo "no warning for ring names wider than the gap" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
