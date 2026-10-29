@@ -3489,6 +3489,24 @@ if "$CINDERPLOT" "$tmpdir/dart2.csv + aes(x=factor(sp), y=factor(ring), fill=v, 
     echo "a spoke in two groups unexpectedly succeeded" >&2; exit 1; fi
 grep -q 'falls in two groups' "$tmpdir/dart2.err" || { echo "no two-group error" >&2; exit 1; }
 
+# ---- C15zz: dartboard rings with their own fill scales (new_scale_fill) ----
+# ggnewscale's idiom: each geom_tile(data=, aes(fill=)) ring takes the fill
+# scales given before the next new_scale_fill(), and each gets its own key
+printf 'sp,ring,v,grp\nA,in,lost,g1\nB,in,kept,g1\nC,in,kept,g2\n' >"$tmpdir/rg0.csv"
+printf 'sp,ring,v,grp\nA,out,0.1,g1\nB,out,0.5,g1\nC,out,0.9,g2\n' >"$tmpdir/rg1.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/rg0.csv + aes(x=factor(sp), y=factor(ring), group=grp) + geom_tile(aes(fill=v)) + scale_fill_manual(values=c(kept=\"#ff0000\", lost=\"#0000ff\")) + labs(fill=\"State\") + new_scale_fill() + geom_tile(data=\"$tmpdir/rg1.csv\", aes(fill=v)) + scale_fill_gradient(low=\"#000000\", high=\"#00ff00\", limits=c(0, 1)) + labs(fill=\"Beta\") + coord_polar(gap=10)" \
+    -o "$tmpdir/rg.svg" --size 5x4 >/dev/null \
+    || { echo "new_scale_fill() dartboard refused" >&2; exit 1; }
+grep -q 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/rg.svg" && grep -q 'fill="rgb(0%, 0%, 100%)"' "$tmpdir/rg.svg" \
+    || { echo "ring 1 ignored its scale_fill_manual()" >&2; exit 1; }
+grep -q '>State</text>' "$tmpdir/rg.svg" && grep -q '>Beta</text>' "$tmpdir/rg.svg" \
+    || { echo "one key per ring scale missing" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/rg1.csv + aes(sp, v) + geom_point() + new_scale_fill()" -o "$tmpdir/rg2.svg" \
+        2>"$tmpdir/rg2.err" >/dev/null; then
+    echo "new_scale_fill() outside the ring plot unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'coord_polar() ring plot so far' "$tmpdir/rg2.err" \
+    || { echo "no scope error for new_scale_fill()" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
