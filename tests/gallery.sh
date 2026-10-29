@@ -30,7 +30,8 @@ ref=""
 unset CINDERPLOT_EDITABLE_SVG CINDERPLOT_BASE_LINE_SIZE
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/cinderplot-gallery.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
-: "${CINDERPLOT_GENOMES:=$HOME/repo/genomes/hg38}"
+# a zhou-lab/genomes checkout beside this one, like the cinderplot repo
+: "${CINDERPLOT_GENOMES:=$here/../genomes/hg38}"
 export CINDERPLOT_GENOMES
 
 python3 - "$REPO" >"$tmpdir/cases.tsv" <<'PY'

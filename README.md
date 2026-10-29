@@ -19,7 +19,7 @@ Enable it under *Settings → Pages → Deploy from a branch → `main` / `docs`
 
 | dir | what |
 |---|---|
-| `data/` | small CSV datasets (mtcars, expr, …) used by the tests and quick demos, plus the whole-genome CNV example (`k562.bins.tsv`, `k562.segments.tsv`; hg38 seqinfo and cytoband come from the genome repo below) |
+| `data/` | small CSV datasets (mtcars, expr, …) used by the tests and quick demos, plus the whole-genome CNV example (`k562.bins.tsv`, `k562.segments.tsv`; hg38 seqinfo and cytoband come from [zhou-lab/genomes](https://github.com/zhou-lab/genomes), see below) |
 | `tracks/` | locus track-browser example (synthetic placeholder): coverage, genes, peaks, loops |
 | `region/` | sesame `visualizeRegion` target (real ADA/HM450 data): a genome-anchored beta heatmap + gene models — see its README for the co-dev spec |
 | `tests/` | everything that runs: `test.sh` (the regression suite), `gallery.sh` (the published figures, rendered and checked), `svgnorm.py`, `cluster_check.c` |
@@ -30,9 +30,17 @@ Each subdirectory has its own README with the exact commands.
 
 These assume `cinderplot` is on your `PATH` (built from the code repo and
 installed, or `make install`). Sample data lives in `data/`. Reference genome
-annotation (cytoband, seqinfo, gene models) is read straight from a genome repo:
-cinderplot decompresses gzip/bgzip and region-queries a tabix index in memory,
-so point those arguments at your local copy (e.g. `~/repo/genomes/hg38`):
+annotation (cytoband, seqinfo, gene models) is read straight from
+[zhou-lab/genomes](https://github.com/zhou-lab/genomes): cinderplot
+decompresses gzip/bgzip and region-queries a tabix index in memory, so clone it
+(or fetch the four `hg38/` files the gallery uses) and point those arguments at
+your copy (e.g. `/path/to/genomes/hg38`):
+
+```sh
+mkdir -p hg38 && for f in seqinfo.tsv.gz cytoband.tsv.gz genes.bed.gz genes.bed.gz.tbi; do
+  curl -sL -o hg38/$f https://raw.githubusercontent.com/zhou-lab/genomes/main/hg38/$f; done
+```
+
 
 ```sh
 cinderplot data/k562.bins.tsv \

@@ -3412,6 +3412,66 @@ if "$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/sb.tsv\", style=\"b
     echo "signal(style=\"bars\", smooth=) unexpectedly succeeded" >&2; exit 1
 fi
 
+# ---- C15zv: geom_density() is evaluated over the data range ----
+# ggplot2's stat_density stops the curve at the x scale's data range; it ran
+# to min-3bw..max+3bw, so a beta density showed mass below 0% and above 100%
+printf 'x\n0.2\n0.3\n0.35\n0.5\n0.6\n0.8\n' >"$tmpdir/dr.csv"
+"$CINDERPLOT" "$tmpdir/dr.csv + aes(x) + geom_density(colour=\"#ff0000\") + geom_vline(xintercept=0.2, colour=\"#0000ff\") + geom_vline(xintercept=0.8, colour=\"#0000ff\")" \
+    -o "$tmpdir/dr.svg" --size 4x3 >/dev/null
+python3 - "$tmpdir/dr.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+def xs(col):
+    out = []
+    for el in re.findall(r'<path[^>]*>', s):
+        if 'stroke="' + col + '"' in el:
+            out += [float(v) for v in re.findall(r'[ML] ([-0-9.]+) ', el)]
+    return out
+red, blue = xs("rgb(100%, 0%, 0%)"), xs("rgb(0%, 0%, 100%)")
+ok = red and blue and min(red) >= min(blue) - 0.5 and max(red) <= max(blue) + 0.5
+sys.exit(0 if ok else "geom_density() curve runs past the data range")
+PY
+"$CINDERPLOT" "$tmpdir/dr.csv + aes(x) + geom_density(trim=TRUE)" -o "$tmpdir/dr2.svg" >/dev/null \
+    || { echo "geom_density(trim=TRUE) refused" >&2; exit 1; }
+
+# ---- C15zw: geom_text_repel() leaves no two labels overprinted ----
+# the gallery's mtcars card stalled the force solver with "Merc 240D" on top
+# of "Merc 230"; a settle pass moves a label to a free spot or drops it (warned)
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$here/data/mtcars.csv + aes(wt, mpg, label=model) + geom_point() + geom_text_repel(size=2.6)" \
+    -o "$tmpdir/rp.svg" >/dev/null 2>"$tmpdir/rp.err"
+python3 - "$tmpdir/rp.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+box = []
+for x, y, fs, t in re.findall(r'<text x="([-0-9.]+)" y="([-0-9.]+)"[^>]*font-size="([0-9.]+)"[^>]*>([^<]+)</text>', s):
+    x, y, fs = float(x), float(y), float(fs)
+    if fs > 9 or not re.search(r'[A-Za-z]{3}', t):
+        continue                       # axis text, not a label
+    box.append((t, x, x + 0.45 * fs * len(t), y - 0.7 * fs, y))
+bad = [(a[0], b[0]) for i, a in enumerate(box) for b in box[i+1:]
+       if a[1] < b[2] and b[1] < a[2] and a[3] < b[4] and b[3] < a[4]]
+sys.exit("overprinted repel labels: %s" % bad if bad else 0)
+PY
+
+# ---- C15zx: errors name what is supported; -v; one --dump-spec story ----
+# a bad chord() argument named nothing, geom_violin pointed at --help, and a
+# missing column did not list the file's columns
+if "$CINDERPLOT" "$here/data/chord_flows.csv + chord([gap=2])" -o "$tmpdir/e.svg" 2>"$tmpdir/e1" >/dev/null; then
+    echo "chord([gap=2]) unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'got `\[gap=2\]`; supported: from=' "$tmpdir/e1" \
+    || { echo "chord() error does not name the token: $(cat "$tmpdir/e1")" >&2; exit 1; }
+if "$CINDERPLOT" "$here/data/mtcars.csv + aes(hp, mpg) + geom_violin()" -o "$tmpdir/e.svg" 2>"$tmpdir/e2" >/dev/null; then
+    echo "geom_violin() unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'the geoms are geom_point/' "$tmpdir/e2" \
+    || { echo "geom error does not list the geoms" >&2; exit 1; }
+if "$CINDERPLOT" "$here/data/mtcars.csv + aes(hpx, mpg) + geom_point()" -o "$tmpdir/e.svg" 2>"$tmpdir/e3" >/dev/null; then
+    echo "aes(hpx) unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'the data has: model, mpg, cyl, disp, hp' "$tmpdir/e3" \
+    || { echo "column error does not list the header: $(cat "$tmpdir/e3")" >&2; exit 1; }
+"$CINDERPLOT" -v | grep -q '^cinderplot ' || { echo "-v does not print the version" >&2; exit 1; }
+"$CINDERPLOT" --help | grep -q 'dump-spec.*renders too only with -o FILE' \
+    || { echo "--help still disagrees with llms.txt about --dump-spec" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
