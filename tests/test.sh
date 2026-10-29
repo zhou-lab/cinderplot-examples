@@ -3507,6 +3507,22 @@ if "$CINDERPLOT" "$tmpdir/rg1.csv + aes(sp, v) + geom_point() + new_scale_fill()
 grep -q 'coord_polar() ring plot so far' "$tmpdir/rg2.err" \
     || { echo "no scope error for new_scale_fill()" >&2; exit 1; }
 
+# ---- C15zza: two manual scales with filled-point data= layers ----
+# scale_colour_manual() and scale_fill_manual() shared one array, so the
+# fill values won and colour= fell back to hue; a geom_point(data=, shape=21)
+# layer ignored fill=; and fill="..." on a point overwrote its colour=
+printf 'x\ty\tg\tf\n1\t1\ta\tp\n2\t2\tb\tp\n3\t3\ta\tq\n' >"$tmpdir/mm.tsv"
+printf 'x\ty\tg\tf\n4\t1\ta\tp\n5\t2\ta\tq\n' >"$tmpdir/mm_fill.tsv"
+printf 'x\ty\tg\tf\n1\t1\ta\tp\n' >"$tmpdir/mm_ring.tsv"
+"$CINDERPLOT" "$tmpdir/mm.tsv + aes(x, y, colour=g, fill=f) + geom_point(data=\"$tmpdir/mm_ring.tsv\", shape=21, colour=\"#000000\", fill=\"#ff00ff\", size=4) + geom_point() + geom_point(data=\"$tmpdir/mm_fill.tsv\", shape=21, stroke=0) + scale_colour_manual(values=c(a=\"#ff0000\", b=\"#00ff00\")) + scale_fill_manual(values=c(p=\"#0000ff\", q=\"#ffff00\"))" \
+    -o "$tmpdir/mm.svg" --size 5x4 >/dev/null 2>&1
+for c in "100%, 0%, 0%" "0%, 100%, 0%" "0%, 0%, 100%" "100%, 100%, 0%" "100%, 0%, 100%"; do
+    grep -q "fill=\"rgb($c)\"" "$tmpdir/mm.svg" \
+        || { echo "manual colour/fill rgb($c) not drawn" >&2; exit 1; }
+done
+grep -q 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/mm.svg" \
+    || { echo "filled ring lost its colour= outline" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
