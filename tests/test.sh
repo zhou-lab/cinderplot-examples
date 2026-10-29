@@ -3472,6 +3472,23 @@ grep -q 'the data has: model, mpg, cyl, disp, hp' "$tmpdir/e3" \
 "$CINDERPLOT" --help | grep -q 'dump-spec.*renders too only with -o FILE' \
     || { echo "--help still disagrees with llms.txt about --dump-spec" >&2; exit 1; }
 
+# ---- C15zy: geom_tile() + coord_polar() draws a dartboard ----
+# x levels become spokes gathered into group= wedges, y levels rings; it
+# used to refuse anything but the radar's geom_line()/geom_point()
+printf 'sp,ring,hex,grp\nA,in,#ff0000,g1\nA,out,#00ff00,g1\nB,in,#0000ff,g1\nB,out,#ffff00,g1\nC,in,#ff00ff,g2\nC,out,#00ffff,g2\n' >"$tmpdir/dart.csv"
+"$CINDERPLOT" "$tmpdir/dart.csv + aes(x=factor(sp), y=factor(ring), fill=hex, group=grp) + geom_tile() + coord_polar(gap=10, inner.radius=0.3) + scale_fill_identity()" \
+    -o "$tmpdir/dart.svg" --size 4x4 >/dev/null \
+    || { echo "geom_tile() + coord_polar() refused" >&2; exit 1; }
+for c in "100%, 0%, 0%" "0%, 100%, 0%" "0%, 0%, 100%" "100%, 100%, 0%" "100%, 0%, 100%" "0%, 100%, 100%"; do
+    [ "$(grep -c "fill=\"rgb($c)\"" "$tmpdir/dart.svg")" -ge 1 ] \
+        || { echo "dartboard tile rgb($c) not drawn" >&2; exit 1; }
+done
+printf 'sp,ring,v,grp\nA,in,1,g1\nA,out,2,g2\n' >"$tmpdir/dart2.csv"
+if "$CINDERPLOT" "$tmpdir/dart2.csv + aes(x=factor(sp), y=factor(ring), fill=v, group=grp) + geom_tile() + coord_polar()" \
+        -o "$tmpdir/dart2.svg" 2>"$tmpdir/dart2.err" >/dev/null; then
+    echo "a spoke in two groups unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'falls in two groups' "$tmpdir/dart2.err" || { echo "no two-group error" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
