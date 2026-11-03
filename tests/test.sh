@@ -3564,6 +3564,25 @@ grep -q '>inner ring</text>' "$tmpdir/gs5.svg" \
     || { echo "axis.text=element_text() did not override theme_void()" >&2; exit 1; }
 true
 
+# ---- C15zzd: coord_polar(leader=TRUE) spreads named spokes on leader lines ----
+# radial names on adjacent spokes (1.5 degrees apart at 225) crowded into one
+# another; leader=TRUE sets them horizontal in side columns, at least a text
+# height apart, each joined to its spoke by a line
+awk 'BEGIN { print "sp,ring,v"; for (i = 10; i < 70; i++) print "s" i ",r,1" }' >"$tmpdir/ld.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/ld.csv + aes(x=factor(sp), y=factor(ring), fill=v) + geom_tile() + coord_polar(leader=TRUE) + scale_x_discrete(breaks=c(\"s20\", \"s21\", \"s22\")) + theme_minimal()" \
+    -o "$tmpdir/ld.svg" --size 5x4 >/dev/null 2>&1 \
+    || { echo "coord_polar(leader=TRUE) refused" >&2; exit 1; }
+python3 - "$tmpdir/ld.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+t = re.findall(r'<text([^>]*)>(s2[012])</text>', s)
+if len(t) != 3: sys.exit("expected 3 named spokes, got %d" % len(t))
+if any('rotate' in a or 'matrix' in a for a, _ in t): sys.exit("leader names are not horizontal")
+ys = sorted(float(re.search(r' y="([-0-9.]+)"', a).group(1)) for a, _ in t)
+fs = float(re.search(r'font-size="([0-9.]+)"', t[0][0]).group(1))
+if min(b - a for a, b in zip(ys, ys[1:])) < 0.95 * fs: sys.exit("leader names closer than a text height")
+PY
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
