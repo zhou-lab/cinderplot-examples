@@ -3538,8 +3538,31 @@ if grep -q '>Charlie</text>' "$tmpdir/dl.svg"; then
     echo "a spoke outside breaks= was named" >&2; exit 1; fi
 grep '>Alpha</text>' "$tmpdir/dl.svg" | grep -q 'fill="#000000"' \
     || { echo "theme(axis.text=element_text(colour=)) ignored" >&2; exit 1; }
-grep -q 'ring names overlap the first spokes; gap=' "$tmpdir/dl.err" \
+grep -q 'ring names overlap the first spokes' "$tmpdir/dl.err" \
     || { echo "no warning for ring names wider than the gap" >&2; exit 1; }
+
+# ---- C15zzc: coord_polar(gap.start=) sizes the ring-name gap alone ----
+# one gap= sized every wedge boundary, so room for the ring names at start=
+# took the same angle from every other boundary; gap.start= defaults to gap=
+printf 'sp,ring,v,grp\nAlpha,inner ring,1,g1\nBravo,inner ring,2,g1\nCharlie,inner ring,3,g2\nDelta,inner ring,4,g2\n' >"$tmpdir/gs.csv"
+G="$tmpdir/gs.csv + aes(x=factor(sp), y=factor(ring), fill=v, group=grp) + geom_tile() + theme_minimal()"
+"$CINDERPLOT" "$G + coord_polar(gap=10)" -o "$tmpdir/gs1.svg" --size 4x4 >/dev/null 2>&1
+"$CINDERPLOT" "$G + coord_polar(gap=10, gap.start=10)" -o "$tmpdir/gs2.svg" --size 4x4 >/dev/null 2>&1 \
+    || { echo "coord_polar(gap.start=) refused" >&2; exit 1; }
+cmp -s "$tmpdir/gs1.svg" "$tmpdir/gs2.svg" \
+    || { echo "gap.start= equal to gap= changed the figure" >&2; exit 1; }
+"$CINDERPLOT" "$G + coord_polar(gap=2)" -o "$tmpdir/gs3.svg" --size 4x4 >/dev/null 2>"$tmpdir/gs3.err"
+grep -q 'gap.start=' "$tmpdir/gs3.err" || { echo "ring-name warning does not name gap.start=" >&2; exit 1; }
+"$CINDERPLOT" "$G + coord_polar(gap=2, gap.start=80)" -o "$tmpdir/gs4.svg" --size 4x4 >/dev/null 2>"$tmpdir/gs4.err"
+if grep -q 'ring names overlap' "$tmpdir/gs4.err"; then
+    echo "a wide gap.start= still warns" >&2; exit 1; fi
+cmp -s "$tmpdir/gs3.svg" "$tmpdir/gs4.svg" && { echo "gap.start= did not change the layout" >&2; exit 1; }
+# theme(axis.text=element_text()) draws the names even over theme_void(), as in ggplot2
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/gs.csv + aes(x=factor(sp), y=factor(ring), fill=v, group=grp) + geom_tile() + coord_polar(gap=2, gap.start=80) + theme_void() + theme(axis.text=element_text(colour=\"#000000\"))" \
+    -o "$tmpdir/gs5.svg" --size 4x4 >/dev/null 2>&1
+grep -q '>inner ring</text>' "$tmpdir/gs5.svg" \
+    || { echo "axis.text=element_text() did not override theme_void()" >&2; exit 1; }
+true
 
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
