@@ -3685,6 +3685,30 @@ w1=$(grep -o 'stroke-width="[0-9.]*"' "$tmpdir/lw1.svg" | head -1 | tr -dc '0-9.
 awk -v a="$w1" -v b="$w0" 'BEGIN { exit !(a > 0 && a < b * 0.6) }' \
     || { echo "geom_tree(linewidth=0.2) did not thin the branches ($w1 vs $w0)" >&2; exit 1; }
 
+# ---- C15zzj: geom_hilight() sectors end at their own clade's tips ----
+# every sector ran out to the tree's outer radius, so a clade of short
+# branches got a long, mostly empty sector; now each ends extend= mm past
+# its own deepest tip (ggtree's default reach)
+printf '((a:1,b:1)AB:1,(c:6,d:6)CD:1)root;\n' >"$tmpdir/hr.tre"
+printf 'node\tclade\nAB\tshort\nCD\tlong\n' >"$tmpdir/hr.tsv"
+"$CINDERPLOT" "$tmpdir/hr.tre + geom_tree(layout=circular) + geom_hilight(data=\"$tmpdir/hr.tsv\", fill=clade) + scale_fill_manual(values=c(short=\"#ff0000\", long=\"#0000ff\"))" \
+    -o "$tmpdir/hr.svg" --size 4x4 --no-legend >/dev/null 2>&1 || { echo "geom_hilight() refused" >&2; exit 1; }
+python3 - "$tmpdir/hr.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+def span(col):
+    for el in re.findall(r'<path[^>]*>', s):
+        if 'fill="' + col + '"' in el:
+            pts = [(float(a), float(b)) for a, b in re.findall(r'[ML] ([-0-9.]+) ([-0-9.]+)', el)]
+            if len(pts) > 8:
+                xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+                return max(max(xs) - min(xs), max(ys) - min(ys))
+    return None
+a, b = span("rgb(100%, 0%, 0%)"), span("rgb(0%, 0%, 100%)")
+if a is None or b is None: sys.exit("hilight sectors not found")
+if not a < 0.6 * b: sys.exit("short clade's sector (%.1f) is not shorter than the long one's (%.1f)" % (a, b))
+PY
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
