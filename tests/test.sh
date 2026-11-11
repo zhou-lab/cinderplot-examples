@@ -3709,6 +3709,37 @@ if a is None or b is None: sys.exit("hilight sectors not found")
 if not a < 0.6 * b: sys.exit("short clade's sector (%.1f) is not shorter than the long one's (%.1f)" % (a, b))
 PY
 
+# ---- C15zzk: theme(strip.text=element_text(face=, size=, colour=)) ----
+# wedge names (the ring plot's facets) had no theme hook, and strip.text took
+# size= only; now face=/colour= style facet strips and wedge names, and bold
+# wedge names still clear each other and the leader column
+awk 'BEGIN { print "sp,ring,v,grp"; n = 0
+             split("Big one 9/9,Vasc. 1/3,RMS 0/4,Other sarc. 0/4,Schw. 1/1,CNS 37/59", G, ",")
+             split("20,3,4,4,1,20", N, ",")
+             for (g = 1; g <= 6; g++) for (i = 1; i <= N[g]; i++) { n++; printf "s%03d,r,%d,%s\n", n, n % 5, G[g] } }' \
+    >"$tmpdir/st.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/st.csv + aes(x=factor(sp), y=factor(ring), fill=v, group=factor(grp, levels=c(\"Big one 9/9\", \"Vasc. 1/3\", \"RMS 0/4\", \"Other sarc. 0/4\", \"Schw. 1/1\", \"CNS 37/59\"))) + geom_tile() + coord_polar(gap=3, inner.radius=0.5, leader=TRUE) + scale_x_discrete(breaks=c(\"s021\", \"s022\", \"s025\", \"s030\", \"s031\", \"s032\", \"s033\")) + theme_minimal() + theme(legend.position=\"none\", strip.text=element_text(face=\"bold\", size=11))" \
+    -o "$tmpdir/st.svg" --size 6x5 >/dev/null 2>&1 || { echo "strip.text face= refused" >&2; exit 1; }
+python3 - "$tmpdir/st.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+w = [(float(x), float(y), float(fs), t, a) for a, x, y, fs, t in
+     re.findall(r'<text((?=[^>]*x="([-0-9.]+)")(?=[^>]*y="([-0-9.]+)")(?=[^>]*font-size="([0-9.]+)")[^>]*)>([^<]+/[^<]+)</text>', s)]
+if len(w) != 6: sys.exit("expected 6 wedge names, got %d" % len(w))
+if not all('bold' in a and abs(fs - 11) < 0.6 for _, _, fs, _, a in w):
+    sys.exit("wedge names not bold 11 pt: %s" % [(t, fs) for _, _, fs, t, _ in w])
+box = [(t, x + 1, x + 0.5 * fs * len(t) - 1, y - 0.7 * fs, y) for x, y, fs, t, _ in w]
+bad = [(a[0], b[0]) for i, a in enumerate(box) for b in box[i+1:]
+       if a[1] < b[2] and b[1] < a[2] and a[3] < b[4] and b[3] < a[4]]
+sys.exit("overlapping wedge names: %s" % bad if bad else 0)
+PY
+printf 'x,y,f\n1,1,a\n2,2,b\n' >"$tmpdir/st2.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/st2.csv + aes(x, y) + geom_point() + facet_wrap(~f) + theme(strip.text=element_text(face=\"bold\", colour=\"#ff0000\"))" \
+    -o "$tmpdir/st2.svg" >/dev/null 2>&1
+grep '>a</text>' "$tmpdir/st2.svg" | grep -q 'font-weight="bold"' \
+    && grep '>a</text>' "$tmpdir/st2.svg" | grep -q 'fill="#ff0000"' \
+    || { echo "facet strip not bold/red from strip.text" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
