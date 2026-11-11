@@ -3673,6 +3673,18 @@ if "$CINDERPLOT" "$tmpdir/bh.tsv + heatmap(name=\"m\") + highlight(rows=c(\"r2\"
 grep -q 'highlight(rows=): `nope` is not a row name' "$tmpdir/bh2.err" \
     || { echo "no unknown-row error for the block form" >&2; exit 1; }
 
+# ---- C15zzi: geom_tree(linewidth=) sets the branch stroke ----
+# branch width was fixed at the 0.5 default; ggtree's size=/linewidth= now
+# sets it, in ggplot units
+printf '((a,b),(c,d));\n' >"$tmpdir/lw.tre"
+"$CINDERPLOT" "$tmpdir/lw.tre + geom_tree()" -o "$tmpdir/lw0.svg" >/dev/null 2>&1
+"$CINDERPLOT" "$tmpdir/lw.tre + geom_tree(linewidth=0.2)" -o "$tmpdir/lw1.svg" >/dev/null 2>&1 \
+    || { echo "geom_tree(linewidth=) refused" >&2; exit 1; }
+w0=$(grep -o 'stroke-width="[0-9.]*"' "$tmpdir/lw0.svg" | head -1 | tr -dc '0-9.')
+w1=$(grep -o 'stroke-width="[0-9.]*"' "$tmpdir/lw1.svg" | head -1 | tr -dc '0-9.')
+awk -v a="$w1" -v b="$w0" 'BEGIN { exit !(a > 0 && a < b * 0.6) }' \
+    || { echo "geom_tree(linewidth=0.2) did not thin the branches ($w1 vs $w0)" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
