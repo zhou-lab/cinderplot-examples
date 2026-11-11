@@ -3583,6 +3583,96 @@ fs = float(re.search(r'font-size="([0-9.]+)"', t[0][0]).group(1))
 if min(b - a for a, b in zip(ys, ys[1:])) < 0.95 * fs: sys.exit("leader names closer than a text height")
 PY
 
+# ---- C15zze: geom_hline(data=, aes(yintercept=)) per facet; panel-edge title warning ----
+# a reference line per facet (ggplot2's data= + aes(yintercept=)) was refused;
+# and a title that fit the canvas but not the room right of the y axis was
+# clipped with no warning
+printf 'g,v,m\nx,1,a\ny,2,a\nx,10,b\ny,20,b\n' >"$tmpdir/fh.csv"
+printf 'm,y\na,0\n' >"$tmpdir/fh_lines.csv"
+"$CINDERPLOT" "$tmpdir/fh.csv + aes(g, v) + geom_point() + geom_hline(data=\"$tmpdir/fh_lines.csv\", aes(yintercept=y), colour=\"#ff0000\") + facet_wrap(~m, scales=\"free_y\")" \
+    -o "$tmpdir/fh.svg" --size 5x3 >/dev/null 2>&1 \
+    || { echo "geom_hline(data=, aes(yintercept=)) refused" >&2; exit 1; }
+[ "$(grep -c 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/fh.svg")" -eq 1 ] \
+    || { echo "per-facet hline not drawn in exactly one panel" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/fh.csv + aes(g, v) + geom_point() + geom_hline(data=\"$tmpdir/fh_lines.csv\")" \
+        -o "$tmpdir/fh2.svg" 2>"$tmpdir/fh2.err" >/dev/null; then
+    echo "geom_hline(data=) without aes(yintercept=) unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'needs aes(yintercept=col)' "$tmpdir/fh2.err" || { echo "no aes(yintercept=) error" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/fh.csv + aes(g, v) + geom_point() + labs(title=\"Tumour score alone (their plot)\")" \
+    -o "$tmpdir/fh3.svg" --size 3x4 >/dev/null 2>"$tmpdir/fh3.err"
+grep -q 'title "Tumour score alone (their plot)" is wider than' "$tmpdir/fh3.err" \
+    || { echo "a title clipped past the panel edge gave no warning" >&2; exit 1; }
+
+# ---- C15zzf: leader=TRUE keeps wedge names off the leader lines ----
+# small wedges put their names beside the ring exactly where the named
+# spokes' leader lines run (COO Fig. 2b: "Vasc. 1/3" across KAPOSI and EHE);
+# a wedge name that would be crossed now joins the side column instead
+awk 'BEGIN { print "sp,ring,v,grp"; n = 0
+             split("Big one 9/9,Vasc. 1/3,RMS 0/4,Other sarc. 0/4,Schw. 1/1,CNS 37/59", G, ",")
+             split("20,3,4,4,1,20", N, ",")
+             for (g = 1; g <= 6; g++) for (i = 1; i <= N[g]; i++) { n++; printf "s%03d,r,%d,%s\n", n, n % 5, G[g] } }' \
+    >"$tmpdir/wl.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/wl.csv + aes(x=factor(sp), y=factor(ring), fill=v, group=factor(grp, levels=c(\"Big one 9/9\", \"Vasc. 1/3\", \"RMS 0/4\", \"Other sarc. 0/4\", \"Schw. 1/1\", \"CNS 37/59\"))) + geom_tile() + coord_polar(gap=3, inner.radius=0.5, leader=TRUE) + scale_x_discrete(breaks=c(\"s021\", \"s022\", \"s025\", \"s030\", \"s031\", \"s032\", \"s033\")) + theme_minimal() + theme(axis.text=element_text(colour=\"black\"), legend.position=\"none\")" \
+    -o "$tmpdir/wl.svg" --size 6x5 >/dev/null 2>&1
+python3 - "$tmpdir/wl.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+segs = []
+for el in re.findall(r'<path[^>]*>', s):
+    if 'rgb(45%, 45%, 45%)' not in el or 'fill="none"' not in el: continue
+    pts = [(float(a), float(b)) for a, b in re.findall(r'[ML] ([-0-9.]+) ([-0-9.]+)', el)]
+    segs += list(zip(pts, pts[1:]))
+if not segs: sys.exit("no leader lines drawn")
+hits = []
+for x, y, fs, t in re.findall(r'<text x="([-0-9.]+)" y="([-0-9.]+)"[^>]*font-size="([0-9.]+)"[^>]*>([^<]+/[^<]+)</text>', s):
+    x, y, fs = float(x), float(y), float(fs)
+    x0, x1, y0, y1 = x + 2, x + 0.45 * fs * len(t) - 2, y - 0.7 * fs, y
+    for (ax, ay), (bx, by) in segs:
+        if any(x0 < ax + (bx - ax) * q / 40 < x1 and y0 < ay + (by - ay) * q / 40 < y1 for q in range(41)):
+            hits.append(t); break
+sys.exit("wedge names crossed by leader lines: %s" % hits if hits else 0)
+PY
+
+# ---- C15zzg: tree clades: geom_hilight(), geom_cladelab(), geom_tree(colour=NA) ----
+# ggtree's clade shading had no counterpart (COO Fig. 1b colours tip points
+# only); a sector per clade under the branches, a boxed two-line label at
+# its outer edge, and branches that can be hidden
+printf '((a,b)AB,(c,d)CD)root;\n' >"$tmpdir/cl.tre"
+printf 'node\tclade\tsub\nAB\tfirst\tone line\nCD\tsecond\ttwo line\n' >"$tmpdir/cl.tsv"
+CL="geom_hilight(data=\"$tmpdir/cl.tsv\", fill=clade) + geom_cladelab(data=\"$tmpdir/cl.tsv\", label=clade, sublabel=sub, fill=clade) + scale_fill_manual(values=c(first=\"#ff0000\", second=\"#0000ff\"))"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/cl.tre + geom_tree(layout=circular, colour=NA) + $CL" \
+    -o "$tmpdir/cl.svg" >/dev/null 2>&1 || { echo "geom_hilight()/geom_cladelab() refused" >&2; exit 1; }
+[ "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/cl.svg")" -ge 2 ] \
+    && [ "$(grep -c 'fill="rgb(0%, 0%, 100%)"' "$tmpdir/cl.svg")" -ge 2 ] \
+    || { echo "clade sector and label box not both filled" >&2; exit 1; }
+for t in first 'one line' second 'two line'; do
+    grep -q ">$t</text>" "$tmpdir/cl.svg" || { echo "clade label \"$t\" missing" >&2; exit 1; }
+done
+if grep -q 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/cl.svg"; then
+    echo "geom_tree(colour=NA) still drew branches" >&2; exit 1; fi
+"$CINDERPLOT" "$tmpdir/cl.tre + geom_tree() + $CL" -o "$tmpdir/cl2.svg" >/dev/null 2>&1 \
+    || { echo "clades on a rectangular tree refused" >&2; exit 1; }
+grep -q 'stroke="rgb(0%, 0%, 0%)"' "$tmpdir/cl2.svg" || { echo "default tree lost its branches" >&2; exit 1; }
+printf 'node\tclade\nNOPE\tx\n' >"$tmpdir/cl_bad.tsv"
+if "$CINDERPLOT" "$tmpdir/cl.tre + geom_tree() + geom_hilight(data=\"$tmpdir/cl_bad.tsv\", fill=clade)" \
+        -o "$tmpdir/cl3.svg" 2>"$tmpdir/cl3.err" >/dev/null; then
+    echo "a clade key naming no node unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'is not a node of the tree' "$tmpdir/cl3.err" || { echo "no unknown-node error" >&2; exit 1; }
+
+# ---- C15zzh: heatmap highlight(rows=, cols=) boxes a block ----
+# highlight("row","col") framed one cell, so a 2x12 block took 24 calls and
+# drew a grid of small boxes (COO Fig. 4c); the block form draws one outline
+printf 'rn\tc1\tc2\tc3\tc4\tc5\tc6\nr1\t1\t2\t3\t4\t5\t6\nr2\t2\t3\t4\t5\t6\t1\nr3\t3\t4\t5\t6\t1\t2\nr4\t4\t5\t6\t1\t2\t3\n' >"$tmpdir/bh.tsv"
+"$CINDERPLOT" "$tmpdir/bh.tsv + heatmap(name=\"m\", cluster=none) + highlight(rows=c(\"r2\", \"r3\"), cols=c(\"c2\", \"c5\"), colour=\"#0000ff\", linewidth=1)" \
+    -o "$tmpdir/bh.svg" >/dev/null 2>&1 || { echo "highlight(rows=, cols=) refused" >&2; exit 1; }
+[ "$(grep -c 'stroke="rgb(0%, 0%, 100%)"' "$tmpdir/bh.svg")" -eq 1 ] \
+    || { echo "block highlight is not one outline" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/bh.tsv + heatmap(name=\"m\") + highlight(rows=c(\"r2\", \"nope\"), cols=c(\"c2\"))" \
+        -o "$tmpdir/bh2.svg" 2>"$tmpdir/bh2.err" >/dev/null; then
+    echo "a block naming no row unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'highlight(rows=): `nope` is not a row name' "$tmpdir/bh2.err" \
+    || { echo "no unknown-row error for the block form" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
