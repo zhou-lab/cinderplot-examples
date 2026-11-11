@@ -442,11 +442,14 @@ if cmp -s "$tmpdir/lay-rectangular.pdf" "$tmpdir/lay-circular.pdf"; then
     echo "layout=circular drew the same figure as rectangular" >&2
     exit 1
 fi
-# A circular tree gets a square canvas; the others do not.
+# A circular tree's auto canvas is cropped to its drawing (C15zzl), so it
+# need not be square; with --size given it is exactly that size.
 if command -v pdfinfo >/dev/null 2>&1; then
-    cw=$(pdfinfo "$tmpdir/lay-circular.pdf" | awk '/Page size/{print int($3)}')
-    ch=$(pdfinfo "$tmpdir/lay-circular.pdf" | awk '/Page size/{print int($5)}')
-    test "$cw" -eq "$ch"
+    "$CINDERPLOT" "$tmpdir/t.tre + geom_tree(layout=circular) + geom_tiplab()" \
+        -o "$tmpdir/lay-circ-sq.pdf" --size 4x4
+    cw=$(pdfinfo "$tmpdir/lay-circ-sq.pdf" | awk '/Page size/{print int($3)}')
+    ch=$(pdfinfo "$tmpdir/lay-circ-sq.pdf" | awk '/Page size/{print int($5)}')
+    test "$cw" -eq 288 && test "$ch" -eq 288
 fi
 # An unknown layout enumerates the three rather than picking one.
 if "$CINDERPLOT" "$tmpdir/t.tre + geom_tree(layout=spiral)" \
@@ -3739,6 +3742,23 @@ CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/st2.csv + aes(x, y) + geom_poin
 grep '>a</text>' "$tmpdir/st2.svg" | grep -q 'font-weight="bold"' \
     && grep '>a</text>' "$tmpdir/st2.svg" | grep -q 'fill="#ff0000"' \
     || { echo "facet strip not bold/red from strip.text" >&2; exit 1; }
+
+# ---- C15zzl: a circular tree's auto canvas fits what is drawn ----
+# the square was sized as if the tree filled a full ring, so a lopsided tree
+# (COO Fig. 1b, short clades) sat in the middle of wide blank margins; with
+# no --size the canvas now crops to the drawing, and --size stays exact
+printf '((a:1,b:1,e:1,f:1)A:1,(c:9,d:9)C:1)root;\n' >"$tmpdir/cf.tre"
+"$CINDERPLOT" "$tmpdir/cf.tre + geom_tree(layout=circular)" -o "$tmpdir/cf.svg" >/dev/null 2>&1 \
+    || { echo "circular tree failed" >&2; exit 1; }
+python3 - "$tmpdir/cf.svg" <<'PY'
+import re, sys
+m = re.search(r'<svg[^>]*width="([0-9.]+)[a-z]*" height="([0-9.]+)', open(sys.argv[1]).read())
+w, h = float(m.group(1)), float(m.group(2))
+if abs(w - h) < 0.05 * max(w, h): sys.exit("auto canvas still square (%.0f x %.0f)" % (w, h))
+PY
+"$CINDERPLOT" "$tmpdir/cf.tre + geom_tree(layout=circular)" -o "$tmpdir/cf2.svg" --size 4x4 >/dev/null 2>&1
+grep -q 'width="288' "$tmpdir/cf2.svg" && grep -q 'height="288' "$tmpdir/cf2.svg" \
+    || { echo "--size 4x4 not honoured exactly" >&2; exit 1; }
 
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
