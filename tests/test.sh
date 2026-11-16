@@ -3812,6 +3812,37 @@ PY
     -o "$tmpdir/hyt2.svg" --size 3x2 >/dev/null 2>"$tmpdir/err" || { echo "--size run failed" >&2; exit 1; }
 grep -q 'y axis title .* is taller than the 2.0in canvas' "$tmpdir/err"
 
+# ---- C15zzo: geom_hex(stat="identity") tiles a spot grid with hexagons ----
+# spatial maps are drawn as gapless hexagons (one per spot, Visium-style);
+# there was no geom_hex. One pointy-top hexagon per row: half-width = the x
+# pitch, vertices at +-2/3 of the y pitch, offset=TRUE staggers a square
+# grid. Checked: 16 hexagons, each as wide as the column pitch, rows
+# interlocking (3/4 of a hexagon's height = the row pitch).
+printf 'x,y,g\n' >"$tmpdir/hex.csv"
+for y in 0 1 2 3; do for x in 0 1 2 3; do
+    echo "$x,$y,g$(( (x + y) % 3 ))" >>"$tmpdir/hex.csv"; done; done
+"$CINDERPLOT" "$tmpdir/hex.csv + aes(x,y,fill=g) + geom_hex()" -o "$tmpdir/hex0.svg" \
+    >/dev/null 2>"$tmpdir/err" && { echo "geom_hex() without stat= accepted" >&2; exit 1; }
+grep -q 'geom_hex(stat="identity") draws one hexagon per row' "$tmpdir/err"
+"$CINDERPLOT" "$tmpdir/hex.csv + aes(x,y,fill=g) + geom_hex(stat=\"identity\", offset=TRUE) + coord_fixed(expand=FALSE)" \
+    -o "$tmpdir/hex.svg" >/dev/null 2>&1 || { echo "geom_hex(stat=identity) failed" >&2; exit 1; }
+python3 - "$tmpdir/hex.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+hexes = []
+for d in re.findall(r'<path[^>]* d="([^"]+)"', s):
+    n = list(map(float, re.findall(r'-?[0-9.]+', d)))
+    if len(n) == 14:
+        hexes.append((n[0:12:2], n[1:12:2]))
+if len(hexes) != 16: sys.exit("expected 16 hexagons, found %d" % len(hexes))
+w = [max(x) - min(x) for x, y in hexes]; h = [max(y) - min(y) for x, y in hexes]
+cx = sorted({round((max(x) + min(x)) / 2, 1) for x, y in hexes})
+cy = sorted({round((max(y) + min(y)) / 2, 1) for x, y in hexes})
+pitch_x = (cx[-1] - cx[0]) / 7          # 4 columns, odd rows shifted half
+pitch_y = (cy[-1] - cy[0]) / 3
+if abs(w[0] - 2 * pitch_x) > 0.05: sys.exit("hexagon width %.2f != column pitch %.2f" % (w[0], 2 * pitch_x))
+if abs(0.75 * h[0] - pitch_y) > 0.05: sys.exit("rows do not interlock: 3/4 h %.2f vs pitch %.2f" % (0.75 * h[0], pitch_y))
+PY
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
