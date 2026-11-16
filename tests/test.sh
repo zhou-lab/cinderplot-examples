@@ -3792,6 +3792,26 @@ cfx_tile "$tmpdir/cfx2.svg" | awk '{ if (($2 - 2 * $1) ^ 2 > 0.04) {
     -o "$tmpdir/cfx3.svg" >/dev/null 2>"$tmpdir/err" && { echo "free scales accepted" >&2; exit 1; }
 grep -q 'coord_fixed() needs one data range' "$tmpdir/err"
 
+# ---- C15zzn: heatmap labs(y=) stays on the canvas ----
+# the y title was centred on the canvas cell whatever its length, so one
+# longer than that cell ran off the bottom (its start clipped). It now slides
+# inside the margins, an auto canvas grows to hold it, and --size warns.
+printf 'r\ta\tb\nx\t1\t2\ny\t3\t4\n' >"$tmpdir/hyt.tsv"
+hyt="a deliberately long y axis title that will not fit the canvas height"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/hyt.tsv + heatmap(name=\"m\", cluster=none) + labs(y=\"$hyt\")" \
+    -o "$tmpdir/hyt.svg" >/dev/null 2>&1 || { echo "heatmap y title failed" >&2; exit 1; }
+python3 - "$tmpdir/hyt.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+h = float(re.search(r'<svg[^>]*height="([0-9.]+)', s).group(1))
+y = float(re.search(r'matrix\(0 -1 1 0 [0-9.-]+ ([0-9.-]+)\)', s).group(1))
+if y > h: sys.exit("y title starts below the canvas (%.1f > %.1f)" % (y, h))
+if h < 250: sys.exit("auto canvas did not grow for the title (%.0f pt)" % h)
+PY
+"$CINDERPLOT" "$tmpdir/hyt.tsv + heatmap(name=\"m\", cluster=none) + labs(y=\"$hyt\")" \
+    -o "$tmpdir/hyt2.svg" --size 3x2 >/dev/null 2>"$tmpdir/err" || { echo "--size run failed" >&2; exit 1; }
+grep -q 'y axis title .* is taller than the 2.0in canvas' "$tmpdir/err"
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
