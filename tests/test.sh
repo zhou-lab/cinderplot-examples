@@ -3883,6 +3883,25 @@ PY
     >/dev/null 2>"$tmpdir/err" && { echo "binned hex + points accepted" >&2; exit 1; }
 grep -q 'binned geom_hex() replaces the data' "$tmpdir/err"
 
+# ---- C15zzq: aes(alpha=), scale_alpha(range=), transparent colours ----
+# an expression overlay needs zero expression fully transparent: there was
+# no alpha aesthetic, and "transparent" / #RRGGBBAA were "bad colour". Now
+# alpha maps a numeric column over scale_alpha(range=) (ggplot2's default
+# c(0.1, 1)) with its own legend, and an 8-digit hex carries its alpha.
+printf 'x,y,g\n1,1,a\n2,1,b\n3,1,c\n' >"$tmpdir/al.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/al.csv + aes(x,y,alpha=x) + geom_tile() + scale_alpha(range=c(0, 1)) + labs(alpha=\"opacity\")" \
+    -o "$tmpdir/al.svg" >/dev/null 2>&1 || { echo "aes(alpha=) failed" >&2; exit 1; }
+grep -q 'fill="rgb(34.9%, 34.9%, 34.9%)" fill-opacity="0.5"' "$tmpdir/al.svg" \
+    || { echo "the middle tile is not at opacity 0.5" >&2; exit 1; }
+grep -q '>opacity<' "$tmpdir/al.svg" || { echo "no alpha legend" >&2; exit 1; }
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/al.csv + aes(x,y,fill=g) + geom_tile() + scale_fill_manual(values=c(a=\"transparent\", b=\"#ff000080\", c=\"blue\"))" \
+    -o "$tmpdir/al2.svg" >/dev/null 2>&1 || { echo "transparent / #RRGGBBAA refused" >&2; exit 1; }
+grep -q 'fill="rgb(100%, 0%, 0%)" fill-opacity="0.50' "$tmpdir/al2.svg" \
+    || { echo "#ff000080 lost its alpha" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/al.csv + aes(x,y,alpha=g) + geom_point()" -o "$tmpdir/al3.svg" \
+    >/dev/null 2>"$tmpdir/err" && { echo "discrete alpha accepted" >&2; exit 1; }
+grep -q 'aes(alpha=) needs a numeric column' "$tmpdir/err"
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
