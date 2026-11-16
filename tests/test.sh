@@ -3760,6 +3760,38 @@ PY
 grep -q 'width="288' "$tmpdir/cf2.svg" && grep -q 'height="288' "$tmpdir/cf2.svg" \
     || { echo "--size 4x4 not honoured exactly" >&2; exit 1; }
 
+# ---- C15zzm: coord_fixed() keeps one data unit equal on both axes ----
+# a spatial pixel map needs square tiles; there was no coord_fixed()/
+# coord_equal(), so --size had to be hunted by hand. Tiles are square on the
+# auto canvas and inside a --size of the wrong shape; ratio=2 doubles height.
+printf 'x,y,g\n0,0,a\n1,0,b\n2,0,a\n3,0,b\n0,1,b\n1,1,a\n2,1,b\n3,1,a\n' >"$tmpdir/cfx.csv"
+cfx_tile() {    # print "w h" of the commonest closed 4-corner path: the 8 tiles
+    python3 - "$1" <<'PY'
+import re, sys, collections
+c = collections.Counter()
+for d in re.findall(r'<path[^>]* d="([^"]+)"', open(sys.argv[1]).read()):
+    n = list(map(float, re.findall(r'-?[0-9.]+', d)))
+    if len(n) in (8, 10):
+        xs, ys = n[0::2], n[1::2]
+        w, h = max(xs) - min(xs), max(ys) - min(ys)
+        if min(w, h) > 5: c[(round(w, 2), round(h, 2))] += 1   # not a grid line
+print("%.3f %.3f" % c.most_common(1)[0][0])
+PY
+}
+for sz in "" "--size 6x3" "--size 3x6"; do
+    "$CINDERPLOT" "$tmpdir/cfx.csv + aes(x,y,fill=g) + geom_tile() + coord_fixed(expand=FALSE)" \
+        -o "$tmpdir/cfx.svg" $sz >/dev/null 2>&1 || { echo "coord_fixed failed ($sz)" >&2; exit 1; }
+    cfx_tile "$tmpdir/cfx.svg" | awk -v sz="$sz" '{ if ($1 <= 0 || ($1 - $2) ^ 2 > 0.01) {
+        print "coord_fixed tile not square (" sz "): " $0 > "/dev/stderr"; exit 1 } }'
+done
+"$CINDERPLOT" "$tmpdir/cfx.csv + aes(x,y,fill=g) + geom_tile() + coord_equal(ratio=2, expand=FALSE)" \
+    -o "$tmpdir/cfx2.svg" >/dev/null 2>&1 || { echo "coord_equal(ratio=2) failed" >&2; exit 1; }
+cfx_tile "$tmpdir/cfx2.svg" | awk '{ if (($2 - 2 * $1) ^ 2 > 0.04) {
+    print "ratio=2 tile not twice as tall: " $0 > "/dev/stderr"; exit 1 } }'
+"$CINDERPLOT" "$tmpdir/cfx.csv + aes(x,y) + geom_point() + coord_fixed() + facet_wrap(~g, scales=\"free\")" \
+    -o "$tmpdir/cfx3.svg" >/dev/null 2>"$tmpdir/err" && { echo "free scales accepted" >&2; exit 1; }
+grep -q 'coord_fixed() needs one data range' "$tmpdir/err"
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
