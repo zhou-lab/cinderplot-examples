@@ -3821,9 +3821,6 @@ grep -q 'y axis title .* is taller than the 2.0in canvas' "$tmpdir/err"
 printf 'x,y,g\n' >"$tmpdir/hex.csv"
 for y in 0 1 2 3; do for x in 0 1 2 3; do
     echo "$x,$y,g$(( (x + y) % 3 ))" >>"$tmpdir/hex.csv"; done; done
-"$CINDERPLOT" "$tmpdir/hex.csv + aes(x,y,fill=g) + geom_hex()" -o "$tmpdir/hex0.svg" \
-    >/dev/null 2>"$tmpdir/err" && { echo "geom_hex() without stat= accepted" >&2; exit 1; }
-grep -q 'geom_hex(stat="identity") draws one hexagon per row' "$tmpdir/err"
 "$CINDERPLOT" "$tmpdir/hex.csv + aes(x,y,fill=g) + geom_hex(stat=\"identity\", offset=TRUE) + coord_fixed(expand=FALSE)" \
     -o "$tmpdir/hex.svg" >/dev/null 2>&1 || { echo "geom_hex(stat=identity) failed" >&2; exit 1; }
 python3 - "$tmpdir/hex.svg" <<'PY'
@@ -3843,6 +3840,49 @@ pitch_y = (cy[-1] - cy[0]) / 3
 if abs(w[0] - 2 * pitch_x) > 0.05: sys.exit("hexagon width %.2f != column pitch %.2f" % (w[0], 2 * pitch_x))
 if abs(0.75 * h[0] - pitch_y) > 0.05: sys.exit("rows do not interlock: 3/4 h %.2f vs pitch %.2f" % (0.75 * h[0], pitch_y))
 PY
+# ---- C15zzp: geom_hex() bins points into hexagons as ggplot2 does ----
+# the hex-bin heatmap: stat_binhex counts the points per hexagon (hexbin's
+# lattice, bins=30 over the data range) and fills by count. The expected
+# cells are ggplot2 3.5 layer_data(geom_hex(bins = 4)) for these 40 points:
+# the 27 centres (x, y, count) and the hexagon width 0.75 (x units).
+awk 'BEGIN { print "x,y"; for (i = 0; i < 40; i++)
+    printf "%.10g,%.10g\n", (i * 7) % 10 / 3, (i * 3) % 8 / 2 + (i % 3) / 10 }' >"$tmpdir/hb.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/hb.csv + aes(x,y) + geom_hex(bins=4)" \
+    -o "$tmpdir/hb.svg" >/dev/null 2>&1 || { echo "binned geom_hex failed" >&2; exit 1; }
+python3 - "$tmpdir/hb.svg" <<'PY'
+import re, sys
+exp = [(0,0,1),(.75,0,1),(1.5,0,1),(2.25,0,1),(3,0,2),(.375,.8011,3),(1.125,.8011,2),
+       (1.875,.8011,2),(2.625,.8011,2),(0,1.6021,1),(.75,1.6021,2),(1.5,1.6021,2),
+       (2.25,1.6021,1),(3,1.6021,1),(.375,2.4032,2),(1.125,2.4032,1),(1.875,2.4032,2),
+       (2.625,2.4032,2),(3.375,2.4032,1),(0,3.2043,1),(.75,3.2043,1),(1.5,3.2043,1),
+       (2.25,3.2043,2),(3,3.2043,2),(.375,4.0054,1),(1.125,4.0054,1),(1.875,4.0054,1)]
+s = open(sys.argv[1]).read()
+got = []
+for m in re.finditer(r'<path([^>]*) d="([^"]+)"', s):
+    n = list(map(float, re.findall(r'-?[0-9.]+', m.group(2))))
+    if len(n) != 14: continue
+    xs, ys = n[0:12:2], n[1:12:2]
+    f = re.search(r'fill="([^"]+)"', m.group(1) + s[m.end():m.end() + 80])
+    got.append(((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2, max(xs) - min(xs), f and f.group(1)))
+if len(got) != len(exp): sys.exit("%d hexagons, ggplot2 has %d" % (len(got), len(exp)))
+exp.sort(key=lambda e: (e[1], e[0])); got.sort(key=lambda g: (-g[1], g[0]))
+xg = [g[0] for g in got]; xe = [e[0] for e in exp]; yg = [g[1] for g in got]; ye = [e[1] for e in exp]
+ax = (max(xg) - min(xg)) / (max(xe) - min(xe)); bx = min(xg) - ax * min(xe)
+ay = (max(yg) - min(yg)) / (max(ye) - min(ye)); by = max(yg) - ay * min(ye)
+for e, g in zip(exp, got):
+    if abs(g[0] - (ax * e[0] + bx)) > 0.1 or abs(g[1] - (by - ay * e[1])) > 0.1:
+        sys.exit("hexagon at %s is not where ggplot2 puts it" % (e,))
+if abs(got[0][2] - 0.75 * ax) > 0.1: sys.exit("hexagon width %.2f, expected %.2f" % (got[0][2], 0.75 * ax))
+fill = {}
+for e, g in zip(exp, got): fill.setdefault(e[2], set()).add(g[3])
+if any(len(v) != 1 for v in fill.values()) or len({next(iter(v)) for v in fill.values()}) != len(fill):
+    sys.exit("fills do not follow the counts: %s" % fill)
+if '>count<' not in s: sys.exit("no count legend title")
+PY
+"$CINDERPLOT" "$tmpdir/hb.csv + aes(x,y) + geom_hex() + geom_point()" -o "$tmpdir/hb2.svg" \
+    >/dev/null 2>"$tmpdir/err" && { echo "binned hex + points accepted" >&2; exit 1; }
+grep -q 'binned geom_hex() replaces the data' "$tmpdir/err"
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
