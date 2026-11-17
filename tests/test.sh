@@ -3902,6 +3902,32 @@ grep -q 'fill="rgb(100%, 0%, 0%)" fill-opacity="0.50' "$tmpdir/al2.svg" \
     >/dev/null 2>"$tmpdir/err" && { echo "discrete alpha accepted" >&2; exit 1; }
 grep -q 'aes(alpha=) needs a numeric column' "$tmpdir/err"
 
+# ---- C15zzr: geom_ribbon, axis.text/plot.title size, log breaks, bottom legend ----
+# four grant-panel gaps, each as ggplot2 has it: geom_ribbon(aes(ymin, ymax))
+# (one band per group); theme(axis.text= / plot.title=element_text(size=));
+# scale_x_log10(breaks=, labels=) (was "only limits="); and
+# theme(legend.position="bottom") (keys in a row under the x title)
+printf 'x,y,lo,hi,g\n100,1,0.8,1.2,a\n1000,0.6,0.5,0.7,a\n10000,0.3,0.2,0.4,a\n100,0.9,0.7,1.1,b\n1000,0.4,0.3,0.5,b\n10000,0.1,0.05,0.2,b\n' >"$tmpdir/rb.csv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/rb.csv + aes(x, y, ymin=lo, ymax=hi, colour=g) + geom_ribbon(alpha=0.2) + geom_line() + scale_x_log10(breaks=c(100,1000,10000), labels=c(\"100\",\"1k\",\"10k\")) + theme_classic(base_size=12) + theme(axis.text=element_text(size=10), plot.title=element_text(size=12), legend.position=\"bottom\") + labs(title=\"T\")" \
+    -o "$tmpdir/rb.svg" >/dev/null 2>&1 || { echo "ribbon/log breaks/bottom legend failed" >&2; exit 1; }
+python3 - "$tmpdir/rb.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+bands = [d for d in re.findall(r'<path[^>]* d="([^"]+)"', s)
+         if len(re.findall(r'-?[0-9.]+', d)) == 14]           # 6 corners: 3 x on top and bottom
+if len(bands) < 2: sys.exit("expected a ribbon per group, found %d" % len(bands))
+t = []
+for a, body in re.findall(r'<text([^>]*)>([^<]*)', s):
+    x = re.search(r' x="([0-9.]+)"', a); y = re.search(r' y="([0-9.]+)"', a)
+    z = re.search(r'font-size="([0-9.]+)"', a)
+    if x and y and z: t.append((float(x.group(1)), float(y.group(1)), float(z.group(1)), body))
+lab = {e[3]: e for e in t}
+if '1k' not in lab or lab['1k'][2] != 10: sys.exit("log break label 1k missing or not 10 pt: %s" % lab.get('1k'))
+if lab['T'][2] != 12: sys.exit("plot.title size %.2f, expected 12" % lab['T'][2])
+if not ('g' in lab and lab['g'][1] > lab['x'][1]): sys.exit("legend title not below the x title")
+if abs(lab['a'][1] - lab['b'][1]) > 2: sys.exit("bottom keys not in one row")
+PY
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
@@ -4155,9 +4181,10 @@ cmp -s "$tmpdir/d5d.png" "$tmpdir/d5e.png"
 "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=g) + geom_point() + guides(colour=\"none\")" \
     --size 4x3 -o "$tmpdir/d6b.png"
 cmp -s "$tmpdir/d6a.png" "$tmpdir/d6b.png"
-if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=g) + geom_point() + theme(legend.position=\"bottom\")" \
+# "bottom" is implemented now (C15zzr); "top" still points at guides()
+if "$CINDERPLOT" "$tmpdir/d.csv + aes(x, y, colour=g) + geom_point() + theme(legend.position=\"top\")" \
         -o "$tmpdir/d6c.pdf" >"$tmpdir/out" 2>"$tmpdir/err"; then
-    echo "legend.position=\"bottom\" unexpectedly succeeded" >&2; exit 1
+    echo "legend.position=\"top\" unexpectedly succeeded" >&2; exit 1
 fi
 grep 'guides(colour="none")' "$tmpdir/err" >/dev/null
 
