@@ -4171,6 +4171,36 @@ test "$(cbars "$tmpdir/al3.svg")" -eq 0 || { echo "legend.position=none kept the
 "$CINDERPLOT" "$tmpdir/al.tsv + heatmap(cluster=none, name=\"m\") + legend(right_of(\"m\"))" -o "$tmpdir/al4.svg" >/dev/null 2>&1
 test "$(cbars "$tmpdir/al4.svg")" -eq 1 || { echo "legend() plus the default made two bars" >&2; exit 1; }
 
+# ---- C15zzzb: text on a discrete y (ridge rows), annotate() by level ----
+# COO Fig. 4a: geom_text(data=) refused a discrete y ("no slot to sit in")
+# and annotate(y="HCC") wanted a number, so 16 stars were hand-placed at
+# level index + 0.3. A layer row now sits at its y level's slot (nudge_y=
+# in rows), annotate(x=/y=) takes a level name, and a text layer under a
+# fill= mapping needs no fill column and adds no glyph to the fill key.
+awk 'BEGIN { srand(7); print "v\tType\tCancer";
+    split("BRCA LUAD", cs, " "); split("Primary Normal", ts, " ");
+    for (c = 1; c <= 2; c++) for (t = 1; t <= 2; t++) for (i = 0; i < 30; i++)
+        printf "%.4f\t%s\t%s\n", 0.3 + 0.3 * t + 0.1 * c + 0.1 * (rand() + rand() - 1), ts[t], cs[c] }' >"$tmpdir/tx.tsv"
+printf 'v\tCancer\tstar\n1.05\tBRCA\tsig\n1.05\tLUAD\tns\n' >"$tmpdir/tx_st.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/tx.tsv + aes(v, Cancer, fill=Type, label=star) + geom_density_ridges(alpha=0.7, scale=1.1) + geom_text(data=\"$tmpdir/tx_st.tsv\", nudge_y=0.3) + annotate(\"text\", x=1.1, y=\"LUAD\", label=\"vsN\")" \
+    -o "$tmpdir/tx.svg" >/dev/null 2>"$tmpdir/err" || { echo "text on ridge rows failed: $(cat "$tmpdir/err")" >&2; exit 1; }
+python3 - "$tmpdir/tx.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+y = {}
+for a, b in re.findall(r'<text([^>]*)>([^<]+)<', s):
+    m = re.search(r' y="([0-9.]+)"', a)
+    if m: y.setdefault(b, []).append(float(m.group(1)))
+row = y['BRCA'][0] - y['LUAD'][0]                  # one row in pt
+if abs(y['sig'][0] - (y['BRCA'][0] - 0.3 * row)) > 2: sys.exit("sig not 0.3 rows above BRCA: %s" % y)
+if abs(y['ns'][0] - (y['LUAD'][0] - 0.3 * row)) > 2: sys.exit("ns not 0.3 rows above LUAD: %s" % y)
+if abs(y['vsN'][0] - y['LUAD'][0]) > 2: sys.exit("annotate(y=\"LUAD\") not on the LUAD row: %s" % y)
+if 'a' in y: sys.exit("the text layer put a glyph in the fill key")
+PY
+"$CINDERPLOT" "$tmpdir/tx.tsv + aes(v, Cancer, fill=Type) + geom_density_ridges() + annotate(\"text\", x=1, y=\"XYZ\", label=\"q\")" \
+    -o "$tmpdir/tx2.svg" >/dev/null 2>"$tmpdir/err" && { echo "an unknown level was accepted" >&2; exit 1; }
+grep -q 'not a level of the y axis' "$tmpdir/err"
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
