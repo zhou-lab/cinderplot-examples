@@ -3972,6 +3972,25 @@ CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/rd.tsv + aes(v) + geom_density(
 grep -o '>[A-Z][A-Za-z]*<' "$tmpdir/rd4.svg" | tr -d '<>' | tr '\n' ' ' | grep -q 'Primary Normal LUAD BRCA' \
     || { echo "facet_grid levels not in the given order" >&2; exit 1; }
 
+# ---- C15zzt: tree mode honours scale_colour_manual / scale_fill_manual ----
+# COO Fig. 1b: tip points ignored scale_colour_manual (an "Unassigned" grey
+# came out a default hue), so with manual scales a lineage's tips and its
+# sector took different colours. Points take the colour scale, sectors and
+# clade boxes the fill scale; one given alone colours both.
+printf '((a:1,b:1)A:1,(c:1,d:1)C:1)root;\n' >"$tmpdir/tm.tre"
+printf 'tip\tlin\na\tX\nb\tX\nc\tY\nd\tU\n' >"$tmpdir/tm_tips.tsv"
+printf 'node\tlin\nA\tX\n' >"$tmpdir/tm_cl.tsv"
+"$CINDERPLOT" "$tmpdir/tm.tre + geom_tree() + geom_hilight(data=\"$tmpdir/tm_cl.tsv\", fill=lin) + geom_tippoint(data=\"$tmpdir/tm_tips.tsv\", colour=lin) + scale_colour_manual(values=c(X=\"#123456\", Y=\"#00ff00\", U=\"#bdbdbd\")) + scale_fill_manual(values=c(X=\"#123456\"))" \
+    -o "$tmpdir/tm1.svg" >/dev/null 2>&1 || { echo "tree with manual scales failed" >&2; exit 1; }
+grep -q 'rgb(74.117647%, 74.117647%, 74.117647%)' "$tmpdir/tm1.svg" \
+    || { echo "scale_colour_manual not applied to tip points" >&2; exit 1; }
+test "$(grep -c 'rgb(7.058824%, 20.392157%, 33.72549%)' "$tmpdir/tm1.svg")" -ge 3 \
+    || { echo "X tips and X sector do not share the manual colour" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/tm.tre + geom_tree() + geom_hilight(data=\"$tmpdir/tm_cl.tsv\", fill=lin) + geom_tippoint(data=\"$tmpdir/tm_tips.tsv\", colour=lin) + scale_fill_manual(values=c(X=\"#123456\", Y=\"#00ff00\", U=\"#bdbdbd\"))" \
+    -o "$tmpdir/tm2.svg" >/dev/null 2>&1 || { echo "tree with fill manual failed" >&2; exit 1; }
+grep -q 'rgb(74.117647%, 74.117647%, 74.117647%)' "$tmpdir/tm2.svg" \
+    || { echo "scale_fill_manual alone does not reach the tips" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
