@@ -4101,6 +4101,32 @@ test "$(grep -c 'stroke-width="0.640187"[^>]*stroke="rgb(100%, 100%, 100%)"' "$t
 test "$(grep -c 'stroke-width="0.640187"' "$tmpdir/lw2.svg")" -eq 2 \
     || { echo "density curves not at 0.64 pt" >&2; exit 1; }
 
+# ---- C15zzy: --tight crops the page to the drawn ink ----
+# composite panels wanted no empty margin; every mode kept its page
+# margins (6-22 pt). --tight lays out at --size, then crops the page to
+# the ink: here three bare tiles, whose outer edges become the page edges.
+printf 'x,y,g\n1,1,a\n2,1,b\n3,2,a\n' >"$tmpdir/tt.csv"
+"$CINDERPLOT" "$tmpdir/tt.csv + aes(x,y,fill=g) + geom_tile() + theme_void() + guides(fill=\"none\")" \
+    --transparent --size 4x3 --tight -o "$tmpdir/tt.svg" >/dev/null 2>&1 || { echo "--tight failed" >&2; exit 1; }
+python3 - "$tmpdir/tt.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+w, h = (float(v) for v in re.search(r'<svg[^>]*width="([0-9.]+)[a-z]*" height="([0-9.]+)', s).groups())
+if w >= 288 or h >= 216: sys.exit("--tight kept the %gx%g page" % (w, h))
+vb = list(map(float, re.search(r'viewBox="([^"]+)"', s).group(1).split()))
+s = re.sub(r'<clipPath.*?</clipPath>', '', s, flags=re.S)   # clip shapes are not ink
+pts = [list(map(float, re.findall(r'-?[0-9.]+', d))) for d in re.findall(r' d="([^"]+)"', s)]
+xs = [v for n in pts for v in n[0::2]]; ys = [v for n in pts for v in n[1::2]]
+# the tiles are clipped to the panel: clamp to the viewBox, then each side
+# may keep at most the 1 pt cairo's integer ink box rounds to
+x0, y0 = max(min(xs), vb[0]), max(min(ys), vb[1])
+x1, y1 = min(max(xs), vb[0] + vb[2]), min(max(ys), vb[1] + vb[3])
+gaps = (x0 - vb[0], y0 - vb[1], vb[0] + vb[2] - x1, vb[1] + vb[3] - y1)
+if max(gaps) > 1.0: sys.exit("--tight left margins %s around the ink" % (gaps,))
+PY
+"$CINDERPLOT" "$tmpdir/tt.csv + aes(x,y) + geom_point()" --tight -o "$tmpdir/tt.png" >/dev/null 2>&1 \
+    || { echo "--tight png failed" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
