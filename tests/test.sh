@@ -4127,6 +4127,23 @@ PY
 "$CINDERPLOT" "$tmpdir/tt.csv + aes(x,y) + geom_point()" --tight -o "$tmpdir/tt.png" >/dev/null 2>&1 \
     || { echo "--tight png failed" >&2; exit 1; }
 
+# ---- C15zzz: --tight never cuts into an editable label ----
+# COO Fig. 4a: the crop came from cairo's glyph box rounded inward, so the
+# viewBox began 0.4 pt right of the longest y label's origin and a viewer's
+# Arial lost its first "c". Labels count from their origin (the advance
+# box, ascent to descent) and the crop rounds outward to whole points.
+printf 'v\tc\n0.1\tccRCC  P*** N***\n0.3\tccRCC  P*** N***\n0.5\tBRCA\n0.7\tBRCA\n' >"$tmpdir/yl.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/yl.tsv + aes(v, c) + geom_tile() + labs(y=NULL)" \
+    --font-size 12 --transparent --tight -o "$tmpdir/yl.svg" >/dev/null 2>&1 || { echo "--tight failed" >&2; exit 1; }
+python3 - "$tmpdir/yl.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+vb = list(map(float, re.search(r'viewBox="([^"]+)"', s).group(1).split()))
+xs = [float(x) for x in re.findall(r'<text x="([0-9.]+)"', s)]
+if any(v != int(v) for v in vb): sys.exit("crop box %s is not rounded to whole points" % vb)
+if min(xs) < vb[0]: sys.exit("viewBox starts at %.2f, a label at %.2f" % (vb[0], min(xs)))
+PY
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
