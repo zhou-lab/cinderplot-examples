@@ -3991,6 +3991,33 @@ test "$(grep -c 'rgb(7.058824%, 20.392157%, 33.72549%)' "$tmpdir/tm1.svg")" -ge 
 grep -q 'rgb(74.117647%, 74.117647%, 74.117647%)' "$tmpdir/tm2.svg" \
     || { echo "scale_fill_manual alone does not reach the tips" >&2; exit 1; }
 
+# ---- C15zzu: heatmap and track modes honour theme text sizes ----
+# COO Fig. 2a/2c: a 12/10 pt convention could not be met -- heatmap names,
+# annotation titles, group labels and colour-bar numbers stayed 0.8 x base,
+# and track row names stayed fitted to the row. axis.text= sizes names and
+# numbers, axis.title= the annotation/group labels, legend.text= the keys.
+printf 'id\tA\tB\nr1\t0.1\t0.9\nr2\t0.6\t0.3\n' >"$tmpdir/ts_m.tsv"
+printf 'col\tgrp\nA\tg1\nB\tg2\n' >"$tmpdir/ts_c.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/ts_m.tsv + heatmap(name=\"m\", cluster=none, rownames=left) + annotation(\"$tmpdir/ts_c.tsv\", column=\"grp\", top_of(\"m\", height=0.1), name=\"grp\", title=\"Group\", title.side=left, labels=data, values=c(g1=\"red\", g2=\"blue\")) + legend(right_of(\"m\"), title=\"Beta\") + theme_minimal(base_size=12) + theme(axis.text=element_text(size=10), axis.title=element_text(size=12), legend.text=element_text(size=10))" \
+    -o "$tmpdir/ts1.svg" >/dev/null 2>&1 || { echo "heatmap with theme sizes failed" >&2; exit 1; }
+python3 - "$tmpdir/ts1.svg" <<'PY'
+import re, sys
+sz = {b: float(a) for a, b in re.findall(r'<text[^>]*font-size="([0-9.]+)"[^>]*>([^<]+)', open(sys.argv[1]).read())}
+want = {'r1': 10, 'Group': 12, 'g1': 12, '0.50': 10, 'Beta': 12}
+bad = {k: (sz.get(k), v) for k, v in want.items() if sz.get(k) != v}
+if bad: sys.exit("heatmap text sizes (got, want): %s" % bad)
+PY
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "region(\"chr20:44617001-44653999\") + matrix(\"$here/data/region_betas_grouped.tsv\", name=\"b\", rowgroup=\"-\", cluster=none, rownames=on, height=6) + theme_minimal(base_size=12) + theme(axis.text=element_text(size=8), axis.title=element_text(size=12))" \
+    -o "$tmpdir/ts2.svg" >/dev/null 2>&1 || { echo "track with theme sizes failed" >&2; exit 1; }
+python3 - "$tmpdir/ts2.svg" <<'PY'
+import re, sys
+t = re.findall(r'<text[^>]*font-size="([0-9.]+)"[^>]*>([^<]+)', open(sys.argv[1]).read())
+leaf = {float(a) for a, b in t if b in ('Normal', 'Tumour')}
+grp = {float(a) for a, b in t if b == '2671'}
+if leaf != {8.0}: sys.exit("track row names at %s, want 8 pt" % leaf)
+if grp != {12.0}: sys.exit("track group labels at %s, want 12 pt" % grp)
+PY
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
