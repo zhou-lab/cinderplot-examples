@@ -2726,8 +2726,19 @@ printf 'sample,purity\ns1,0.1\ns2,0.5\ns3,0.9\ns4,0.3\n' >"$tmpdir/afp.csv"
 svgnorm "$tmpdir/af.svg"
 grep -q 'fill="rgb(0%, 100%, 0%)"' "$tmpdir/af.svg" || { echo "values= file colour not used" >&2; exit 1; }
 grep -q 'fill="rgb(100%, 0%, 100%)"' "$tmpdir/af.svg" || { echo "numeric values= ramp not used" >&2; exit 1; }
-# a side title is set at the row-name size; a top title at the base size
-grep -q 'font-size="8.80"[^>]*>Cancer Type' "$tmpdir/af.svg" || { echo "title.side=left not applied" >&2; exit 1; }
+# a side title sits beside its band (its baseline within the band's rows),
+# not above it; since 2026-11-18 it is at the base size, as a top title is
+python3 - "$tmpdir/af.svg" <<'PY' || { echo "title.side=left not applied" >&2; exit 1; }
+import re, sys
+s = open(sys.argv[1]).read()
+y = float(re.search(r'<text[^>]* y="([0-9.]+)"[^>]*>Cancer Type', s).group(1))
+band = []
+for m in re.finditer(r'<path([^>]*)>', s):
+    if 'fill="rgb(100%, 0%, 0%)"' not in m.group(1): continue
+    d = re.search(r' d="([^"]+)"', m.group(1))
+    band += list(map(float, re.findall(r'-?[0-9.]+', d.group(1))))[1::2]
+sys.exit(0 if band and min(band) <= y <= max(band) + 4 else 1)
+PY
 # a numeric band refuses a qualitative set, a categorical one a ramp
 if "$CINDERPLOT" "$tmpdir/afm.csv + heatmap(name=\"m\") + annotation(\"$tmpdir/afp.csv\", top_of(\"m\"), palette=\"Set2\")" \
         -o "$tmpdir/af2.svg" 2>"$tmpdir/err"; then
@@ -4006,6 +4017,17 @@ sz = {b: float(a) for a, b in re.findall(r'<text[^>]*font-size="([0-9.]+)"[^>]*>
 want = {'r1': 10, 'Group': 12, 'g1': 12, '0.50': 10, 'Beta': 12}
 bad = {k: (sz.get(k), v) for k, v in want.items() if sz.get(k) != v}
 if bad: sys.exit("heatmap text sizes (got, want): %s" % bad)
+PY
+# unset, the annotation titles and group labels follow base_size (Wanding,
+# 2026-11-18), the names stay 0.8 x base
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/ts_m.tsv + heatmap(name=\"m\", cluster=none, rownames=left) + annotation(\"$tmpdir/ts_c.tsv\", column=\"grp\", top_of(\"m\", height=0.1), name=\"grp\", title=\"Group\", title.side=left, labels=data, values=c(g1=\"red\", g2=\"blue\")) + theme_minimal(base_size=12)" \
+    -o "$tmpdir/ts1b.svg" >/dev/null 2>&1 || { echo "heatmap at base_size=12 failed" >&2; exit 1; }
+python3 - "$tmpdir/ts1b.svg" <<'PY'
+import re, sys
+sz = {b: float(a) for a, b in re.findall(r'<text[^>]*font-size="([0-9.]+)"[^>]*>([^<]+)', open(sys.argv[1]).read())}
+want = {'r1': 9.6, 'Group': 12, 'g1': 12}
+bad = {k: (sz.get(k), v) for k, v in want.items() if sz.get(k) != v}
+if bad: sys.exit("heatmap default sizes at base 12 (got, want): %s" % bad)
 PY
 CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "region(\"chr20:44617001-44653999\") + matrix(\"$here/data/region_betas_grouped.tsv\", name=\"b\", rowgroup=\"-\", cluster=none, rownames=on, height=6) + theme_minimal(base_size=12) + theme(axis.text=element_text(size=8), axis.title=element_text(size=12))" \
     -o "$tmpdir/ts2.svg" >/dev/null 2>&1 || { echo "track with theme sizes failed" >&2; exit 1; }
