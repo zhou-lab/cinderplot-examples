@@ -4085,6 +4085,22 @@ python3 "$tmpdir/cbar.py" "$tmpdir/cb1.svg"
     -o "$tmpdir/cb2.svg" >/dev/null 2>&1 || { echo "track colourbar guide failed" >&2; exit 1; }
 python3 "$tmpdir/cbar.py" "$tmpdir/cb2.svg"
 
+# ---- C15zzx: linewidth= on geom_density_ridges() and geom_density() ----
+# COO Fig. 4a: the ridge outlines were too heavy, and linewidth= errored.
+# As ggplot2: linewidth (0.3 = 0.64 pt) with a constant colour= outline.
+awk 'BEGIN { srand(7); print "v\tType\tCancer";
+    split("BRCA LUAD", cs, " "); split("Primary Normal", ts, " ");
+    for (c = 1; c <= 2; c++) for (t = 1; t <= 2; t++) for (i = 0; i < 30; i++)
+        printf "%.4f\t%s\t%s\n", 0.3 + 0.3 * t + 0.1 * c + 0.1 * (rand() + rand() - 1), ts[t], cs[c] }' >"$tmpdir/rd.tsv"
+"$CINDERPLOT" "$tmpdir/rd.tsv + aes(v, Cancer, fill=Type) + geom_density_ridges(alpha=0.7, colour=\"white\", linewidth=0.3)" \
+    -o "$tmpdir/lw1.svg" >/dev/null 2>&1 || { echo "ridges linewidth= refused" >&2; exit 1; }
+test "$(grep -c 'stroke-width="0.640187"[^>]*stroke="rgb(100%, 100%, 100%)"' "$tmpdir/lw1.svg")" -eq 4 \
+    || { echo "ridge outlines not white at 0.64 pt" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/rd.tsv + aes(v, fill=Type) + geom_density(linewidth=0.3)" \
+    -o "$tmpdir/lw2.svg" >/dev/null 2>&1 || { echo "density linewidth= refused" >&2; exit 1; }
+test "$(grep -c 'stroke-width="0.640187"' "$tmpdir/lw2.svg")" -eq 2 \
+    || { echo "density curves not at 0.64 pt" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
