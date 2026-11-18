@@ -4201,6 +4201,35 @@ PY
     -o "$tmpdir/tx2.svg" >/dev/null 2>"$tmpdir/err" && { echo "an unknown level was accepted" >&2; exit 1; }
 grep -q 'not a level of the y axis' "$tmpdir/err"
 
+# ---- C15zzzc: a freed x axis is sized per facet row ----
+# COO subtype dotplots: under scales="free_x" with rotated labels every row
+# reserved the longest label anywhere, so rows of short labels kept a blank
+# band (and 5 rows at 7.5x8 in collapsed the panels). Each row's axis now
+# holds its own labels, as ggplot2's gtable rows do.
+printf 'type,beta,panel\n' >"$tmpdir/fr.csv"
+for p in 0 1 2 3; do
+    case $p in 1) a=a_very_long_label_x; b=a_very_long_label_y ;; *) a=A$p; b=B$p ;; esac
+    for t in $a $b; do echo "$t,0.$p,p$p" >>"$tmpdir/fr.csv"; echo "$t,0.9,p$p" >>"$tmpdir/fr.csv"; done
+done
+"$CINDERPLOT" "$tmpdir/fr.csv + aes(x=factor(type), y=beta) + geom_point() + facet_wrap(~panel, ncol=1, scales=\"free_x\") + scale_x_discrete(angle=60)" \
+    --size 4x7 -o "$tmpdir/fr.svg" >/dev/null 2>&1 || { echo "free_x facet failed" >&2; exit 1; }
+python3 - "$tmpdir/fr.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+rows = set()
+for m in re.finditer(r'<path([^>]*)>', s):
+    a = m.group(1)
+    if 'fill="rgb(92.2%, 92.2%, 92.2%)"' not in a and 'fill="rgb(92.156863%, 92.156863%, 92.156863%)"' not in a: continue
+    ys = list(map(float, re.findall(r'-?[0-9.]+', re.search(r' d="([^"]+)"', a).group(1))))[1::2]
+    rows.add((round(min(ys), 1), round(max(ys), 1)))
+rows = sorted(rows)
+gaps = [rows[i + 1][0] - rows[i][1] for i in range(len(rows) - 1)]
+if len(gaps) != 3: sys.exit("expected 4 panel rows, got %s" % rows)
+# row 1 holds the long labels; rows 0 and 2 short ones
+if not (gaps[0] < gaps[1] - 20 and gaps[2] < gaps[1] - 20):
+    sys.exit("rows of short labels reserve the long labels' band: gaps %s" % gaps)
+PY
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
