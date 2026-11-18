@@ -4018,6 +4018,25 @@ if leaf != {8.0}: sys.exit("track row names at %s, want 8 pt" % leaf)
 if grp != {12.0}: sys.exit("track group labels at %s, want 12 pt" % grp)
 PY
 
+# ---- C15zzv: a constant fill= on geom_tile / geom_hex paints the cell ----
+# geom_tile(fill="red") drew grey cells with red borders (fill= took the
+# colour= slot, which on a tile is the border). As ggplot2: fill= is the
+# body, colour= the border, in either order.
+printf 'x,y\n1,1\n2,1\n3,1\n' >"$tmpdir/cf.csv"
+for g in 'geom_tile(fill="red")' 'geom_tile(colour="white", fill="red")' \
+         'geom_tile(fill="red", colour="white")' 'geom_hex(stat="identity", fill="red")'; do
+    "$CINDERPLOT" "$tmpdir/cf.csv + aes(x,y) + $g" -o "$tmpdir/cfill.svg" >/dev/null 2>&1 \
+        || { echo "$g failed" >&2; exit 1; }
+    test "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/cfill.svg")" -eq 3 \
+        || { echo "$g: the cells are not red" >&2; exit 1; }
+    grep -q 'stroke="rgb(100%, 0%, 0%)"' "$tmpdir/cfill.svg" \
+        && { echo "$g: fill= still draws the border" >&2; exit 1; }
+done
+"$CINDERPLOT" "$tmpdir/cf.csv + aes(x,y) + geom_tile(colour=\"white\", fill=\"red\") + theme_void()" \
+    -o "$tmpdir/cfill2.svg" >/dev/null 2>&1
+test "$(grep -c 'stroke="rgb(100%, 100%, 100%)"' "$tmpdir/cfill2.svg")" -eq 3 \
+    || { echo "colour= border lost beside fill=" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
