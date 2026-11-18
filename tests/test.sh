@@ -4107,7 +4107,8 @@ test "$(grep -c 'stroke-width="0.640187"' "$tmpdir/lw2.svg")" -eq 2 \
 # the ink: here three bare tiles, whose outer edges become the page edges.
 printf 'x,y,g\n1,1,a\n2,1,b\n3,2,a\n' >"$tmpdir/tt.csv"
 "$CINDERPLOT" "$tmpdir/tt.csv + aes(x,y,fill=g) + geom_tile() + theme_void() + guides(fill=\"none\")" \
-    --transparent --size 4x3 --tight -o "$tmpdir/tt.svg" >/dev/null 2>&1 || { echo "--tight failed" >&2; exit 1; }
+    --transparent --size 4x3 --tight -o "$tmpdir/tt.svg" >/dev/null 2>"$tmpdir/err" \
+    || { echo "--tight failed: $(cat "$tmpdir/err")" >&2; exit 1; }
 python3 - "$tmpdir/tt.svg" <<'PY'
 import re, sys
 s = open(sys.argv[1]).read()
@@ -4124,8 +4125,8 @@ x1, y1 = min(max(xs), vb[0] + vb[2]), min(max(ys), vb[1] + vb[3])
 gaps = (x0 - vb[0], y0 - vb[1], vb[0] + vb[2] - x1, vb[1] + vb[3] - y1)
 if max(gaps) > 1.0: sys.exit("--tight left margins %s around the ink" % (gaps,))
 PY
-"$CINDERPLOT" "$tmpdir/tt.csv + aes(x,y) + geom_point()" --tight -o "$tmpdir/tt.png" >/dev/null 2>&1 \
-    || { echo "--tight png failed" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/tt.csv + aes(x,y) + geom_point()" --tight -o "$tmpdir/tt.png" >/dev/null 2>"$tmpdir/err" \
+    || { echo "--tight png failed: $(cat "$tmpdir/err")" >&2; exit 1; }
 
 # ---- C15zzz: --tight never cuts into an editable label ----
 # COO Fig. 4a: the crop came from cairo's glyph box rounded inward, so the
@@ -4134,7 +4135,8 @@ PY
 # box, ascent to descent) and the crop rounds outward to whole points.
 printf 'v\tc\n0.1\tccRCC  P*** N***\n0.3\tccRCC  P*** N***\n0.5\tBRCA\n0.7\tBRCA\n' >"$tmpdir/yl.tsv"
 CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/yl.tsv + aes(v, c) + geom_tile() + labs(y=NULL)" \
-    --font-size 12 --transparent --tight -o "$tmpdir/yl.svg" >/dev/null 2>&1 || { echo "--tight failed" >&2; exit 1; }
+    --font-size 12 --transparent --tight -o "$tmpdir/yl.svg" >/dev/null 2>"$tmpdir/err" \
+    || { echo "--tight failed: $(cat "$tmpdir/err")" >&2; exit 1; }
 python3 - "$tmpdir/yl.svg" <<'PY'
 import re, sys
 s = open(sys.argv[1]).read()
