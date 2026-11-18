@@ -772,7 +772,7 @@ printf 'R0\t1\t2\t3\t4\nR1\t4\t3\t2\t1\n' >>"$tmpdir/wide.tsv"
 for a in 1 2; do
     "$CINDERPLOT" \
         "$tmpdir/wide.tsv + heatmap(cluster=none, rownames=none, colnames=none, aspect=$a)" \
-        -o "$tmpdir/asp-$a.pdf"
+        --no-legend -o "$tmpdir/asp-$a.pdf"
     test -s "$tmpdir/asp-$a.pdf"
 done
 if command -v pdfinfo >/dev/null 2>&1; then
@@ -788,7 +788,7 @@ fi
 # A partial --size fixes one side and aspect derives the other.
 "$CINDERPLOT" \
     "$tmpdir/wide.tsv + heatmap(cluster=none, rownames=none, colnames=none, aspect=1)" \
-    --size 6x -o "$tmpdir/asp-part.pdf"
+    --no-legend --size 6x -o "$tmpdir/asp-part.pdf"
 if command -v pdfinfo >/dev/null 2>&1; then
     wp=$(pdfinfo "$tmpdir/asp-part.pdf" | awk '/Page size/{print int($3)}')
     hp=$(pdfinfo "$tmpdir/asp-part.pdf" | awk '/Page size/{print int($5)}')
@@ -2086,7 +2086,7 @@ printf 'grp\nlow\nhigh\nlow\nhigh\nlow\nhigh\n' >"$tmpdir/chaingrp.csv"
 "$CINDERPLOT" "$tmpdir/chain.csv + heatmap(name=\"m\", cluster=rows)
      + annotation(\"$tmpdir/chaingrp.csv\", right_of(\"m\"), name=\"A\")
      + annotation(\"$tmpdir/chaingrp.csv\", right_of(\"A\"), name=\"B\")" \
-    --size 4x4 -o "$tmpdir/chain.svg"
+    --no-legend --size 4x4 -o "$tmpdir/chain.svg"
 svgnorm "$tmpdir/chain.svg"
 # the two strips are 6 rects each, drawn A then B, right after the 12 cells
 fills=$(grep -o 'fill="rgb([^"]*"' "$tmpdir/chain.svg" | sed -n '13,24p')
@@ -2851,7 +2851,7 @@ awk -v t="$ttx" -v l="$lbx" 'BEGIN { exit !(t + 95 <= l) }' || { echo "left lege
 printf 'probe,s1,s2,s3,s4,s5,s6,s7,s8\nr1,1,2,3,4,5,6,7,8\nr2,2,3,4,5,6,7,8,1\n' >"$tmpdir/hlm.csv"
 printf 'sample,grp\ns1,Hematological\ns2,Hematological\ns3,Hematological\ns4,Carcinoma\ns5,Adrenal\ns6,CNS\ns7,Mesenchymal\ns8,Mesenchymal\n' >"$tmpdir/hlg.csv"
 "$CINDERPLOT" "$tmpdir/hlm.csv + heatmap(name=\"m\", cluster=none) + annotation(\"$tmpdir/hlg.csv\", top_of(\"m\", height=0.1), labels=data, title=\"Cancer Group\")" \
-    --editable-svg -o "$tmpdir/hl.svg" --size 4x2
+    --editable-svg --no-legend -o "$tmpdir/hl.svg" --size 4x2
 for lv in Hematological Carcinoma Adrenal CNS Mesenchymal; do
     test "$(grep -c ">$lv<" "$tmpdir/hl.svg")" -eq 1 || { echo "run label $lv not drawn once" >&2; exit 1; }
 done
@@ -4144,6 +4144,31 @@ if any(v != int(v) for v in vb): sys.exit("crop box %s is not rounded to whole p
 if min(xs) < vb[0]: sys.exit("viewBox starts at %.2f, a label at %.2f" % (vb[0], min(xs)))
 PY
 
+# ---- C15zzza: a heatmap without legend() gets its colour bar ----
+# COO Fig. 1d came out with no key: heatmap mode drew one only for an
+# explicit legend(). As ComplexHeatmap, the first heatmap is keyed on its
+# right, titled by its name=; --no-legend and legend.position="none" drop
+# it, and an explicit legend() replaces it.
+printf 'id\tA\tB\nr1\t0\t10\nr2\t5\t2\n' >"$tmpdir/al.tsv"
+cbars() { python3 - "$1" <<'PY'
+import re, sys, collections
+c = collections.Counter()
+for d in re.findall(r' d="([^"]+)"', open(sys.argv[1]).read()):
+    n = list(map(float, re.findall(r'-?[0-9.]+', d)))
+    if len(n) in (8, 10): c[(round(min(n[0::2]), 1), round(max(n[0::2]) - min(n[0::2]), 2))] += 1
+print(sum(1 for v in c.values() if v >= 30))
+PY
+}
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/al.tsv + heatmap(cluster=none, name=\"-log10 p\")" -o "$tmpdir/al1.svg" >/dev/null 2>&1
+test "$(cbars "$tmpdir/al1.svg")" -eq 1 || { echo "no automatic colour bar" >&2; exit 1; }
+grep -q '>-log10 p<' "$tmpdir/al1.svg" || { echo "colour bar not titled by name=" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/al.tsv + heatmap(cluster=none)" --no-legend -o "$tmpdir/al2.svg" >/dev/null 2>&1
+test "$(cbars "$tmpdir/al2.svg")" -eq 0 || { echo "--no-legend kept the bar" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/al.tsv + heatmap(cluster=none) + theme(legend.position=\"none\")" -o "$tmpdir/al3.svg" >/dev/null 2>&1
+test "$(cbars "$tmpdir/al3.svg")" -eq 0 || { echo "legend.position=none kept the bar" >&2; exit 1; }
+"$CINDERPLOT" "$tmpdir/al.tsv + heatmap(cluster=none, name=\"m\") + legend(right_of(\"m\"))" -o "$tmpdir/al4.svg" >/dev/null 2>&1
+test "$(cbars "$tmpdir/al4.svg")" -eq 1 || { echo "legend() plus the default made two bars" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
@@ -4973,7 +4998,7 @@ printf 'sample,TP53,KRAS,EGFR\ns1,MUT,WT,AMP\ns2,WT,WT,WT\ns3,MUT,MUT,WT\n' >"$t
 # ---- a text matrix renders, one colour per level ----
 # It used to stop at "matrix column `TP53` is not numeric".
 "$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=none, rownames=none, colnames=none)" \
-    --size 2x2 -o "$tmpdir/calls.svg"
+    --no-legend --size 2x2 -o "$tmpdir/calls.svg"
 test -s "$tmpdir/calls.svg"
 svgnorm "$tmpdir/calls.svg"
 # nothing but the nine cells is painted, in three colours, one per level
@@ -4990,7 +5015,7 @@ fi
 # emitted row-major, so the whole sequence is checkable, not just the counts.
 "$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=none, rownames=none, colnames=none)
      + scale_fill_manual(values=c(\"MUT\"=\"#FF0000\", \"WT\"=\"#0000FF\"))" \
-    --size 2x2 -o "$tmpdir/named.svg"
+    --no-legend --size 2x2 -o "$tmpdir/named.svg"
 svgnorm "$tmpdir/named.svg"
 got=$(grep -o 'fill="rgb([^"]*)"' "$tmpdir/named.svg" | sed -e 's/.*rgb(//' -e 's/).*//' | tr '\n' '|')
 want='100%, 0%, 0%|0%, 0%, 100%|97.254902%, 46.27451%, 42.745098%|0%, 0%, 100%|0%, 0%, 100%|0%, 0%, 100%|100%, 0%, 0%|100%, 0%, 0%|0%, 0%, 100%|'
@@ -5004,7 +5029,7 @@ fi
 # ---- a positional values= list is read level by level, and must be long enough ----
 "$CINDERPLOT" "$tmpdir/calls.csv + heatmap(cluster=none, rownames=none, colnames=none)
      + scale_fill_manual(values=c(\"#FF0000\",\"#00FF00\",\"#0000FF\"))" \
-    --size 2x2 -o "$tmpdir/pos.svg"
+    --no-legend --size 2x2 -o "$tmpdir/pos.svg"
 svgnorm "$tmpdir/pos.svg"
 grep -q 'fill="rgb(0%, 100%, 0%)"' "$tmpdir/pos.svg" \
     || { echo "positional values= did not reach the second level" >&2; exit 1; }
