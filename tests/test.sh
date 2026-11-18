@@ -3928,6 +3928,50 @@ if not ('g' in lab and lab['g'][1] > lab['x'][1]): sys.exit("legend title not be
 if abs(lab['a'][1] - lab['b'][1]) > 2: sys.exit("bottom keys not in one row")
 PY
 
+# ---- C15zzs: filled density, ridges, axis.text.y blank, facet_grid levels ----
+# COO Fig. 4a/S4a: geom_density(fill=) warned and drew lines; there was no
+# geom_density_ridges(); theme(axis.text.y=element_blank()) was refused; and
+# facet_grid() sorted its levels with no way to order them. As ggplot2 /
+# ggridges: a filled density keeps alpha on the fill; ridges share one
+# bandwidth with the tallest scale= (1.8) rows high; .y blanks the left axis
+# and frees its room; factor(v, levels=) orders a grid side.
+awk 'BEGIN { srand(7); print "v\tType\tCancer";
+    split("BRCA LUAD", cs, " "); split("Primary Normal", ts, " ");
+    for (c = 1; c <= 2; c++) for (t = 1; t <= 2; t++) for (i = 0; i < 30; i++)
+        printf "%.4f\t%s\t%s\n", 0.3 + 0.3 * t + 0.1 * c + 0.1 * (rand() + rand() - 1), ts[t], cs[c] }' >"$tmpdir/rd.tsv"
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/rd.tsv + aes(v, fill=Type) + geom_density(alpha=0.5)" \
+    -o "$tmpdir/rd1.svg" >/dev/null 2>"$tmpdir/err" || { echo "filled density failed" >&2; exit 1; }
+grep -q 'drawn as colour' "$tmpdir/err" && { echo "filled density still warns" >&2; exit 1; }
+grep -q 'fill-opacity="0.5"' "$tmpdir/rd1.svg" || { echo "density fill has no alpha" >&2; exit 1; }
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/rd.tsv + aes(v, Cancer, fill=Type) + geom_density_ridges(alpha=0.7)" \
+    -o "$tmpdir/rd2.svg" >/dev/null 2>&1 || { echo "geom_density_ridges failed" >&2; exit 1; }
+python3 - "$tmpdir/rd2.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+f = []
+for m in re.finditer(r'<path([^>]*)>', s):
+    a = m.group(1); d = re.search(r' d="([^"]+)"', a)
+    if not d or 'fill="none"' in a: continue
+    n = list(map(float, re.findall(r'-?[0-9.]+', d.group(1))))
+    if len(n) > 100: f.append(n[1::2])
+if len(f) != 4: sys.exit("expected 4 ridges, found %d" % len(f))
+bases = sorted({round(max(y), 1) for y in f})
+if len(bases) != 2: sys.exit("ridges not on two baselines: %s" % bases)
+unit = bases[1] - bases[0]
+tall = max(max(y) - min(y) for y in f) / unit
+if abs(tall - 1.8) > 0.01: sys.exit("tallest ridge %.3f rows, ggridges' scale is 1.8" % tall)
+PY
+printf 'p\tv\n' >"$tmpdir/ax.tsv"
+i=0; while [ $i -lt 200 ]; do printf 'cg%05d\t%d\n' $i $((i % 7)) >>"$tmpdir/ax.tsv"; i=$((i + 1)); done
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/ax.tsv + aes(p, v) + geom_col() + coord_flip() + theme(axis.text.y=element_blank())" \
+    -o "$tmpdir/rd3.svg" >/dev/null 2>&1 || { echo "axis.text.y=element_blank() refused" >&2; exit 1; }
+grep -q '>cg00' "$tmpdir/rd3.svg" && { echo "y labels still drawn" >&2; exit 1; }
+grep -q 'height="288"' "$tmpdir/rd3.svg" || { echo "200 hidden labels still stretched the canvas" >&2; exit 1; }
+CINDERPLOT_EDITABLE_SVG=1 "$CINDERPLOT" "$tmpdir/rd.tsv + aes(v) + geom_density() + facet_grid(factor(Cancer, levels=c(\"LUAD\",\"BRCA\")) ~ factor(Type, levels=c(\"Primary\",\"Normal\")))" \
+    -o "$tmpdir/rd4.svg" >/dev/null 2>&1 || { echo "facet_grid(factor(levels=)) refused" >&2; exit 1; }
+grep -o '>[A-Z][A-Za-z]*<' "$tmpdir/rd4.svg" | tr -d '<>' | tr '\n' ' ' | grep -q 'Primary Normal LUAD BRCA' \
+    || { echo "facet_grid levels not in the given order" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
