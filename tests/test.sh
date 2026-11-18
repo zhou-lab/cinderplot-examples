@@ -4037,6 +4037,32 @@ done
 test "$(grep -c 'stroke="rgb(100%, 100%, 100%)"' "$tmpdir/cfill2.svg")" -eq 3 \
     || { echo "colour= border lost beside fill=" >&2; exit 1; }
 
+# ---- C15zzw: guide_colourbar(barheight=, barwidth=) in heatmap and track mode ----
+# COO Fig. 2a wants 60 x 9 pt colourbars; heatmap and track legends kept the
+# fixed 28 x 4 mm bar (about 80 pt long). As plot mode and ggplot2: a
+# standing bar is barheight long and barwidth thick.
+cat >"$tmpdir/cbar.py" <<'PY'
+import re, sys, collections
+s = open(sys.argv[1]).read(); c = collections.Counter(); ext = {}
+for d in re.findall(r' d="([^"]+)"', s):
+    n = list(map(float, re.findall(r'-?[0-9.]+', d)))
+    if len(n) in (8, 10):
+        xs, ys = n[0::2], n[1::2]; k = (round(min(xs), 1), round(max(xs) - min(xs), 2))
+        c[k] += 1; ext.setdefault(k, []).extend(ys)
+bars = [(k[1], max(ext[k]) - min(ext[k])) for k, v in c.items() if v >= 30]
+if len(bars) != 1: sys.exit("expected one colourbar, found %d" % len(bars))
+w, l = bars[0]
+if abs(w - 9) > 0.5 or abs(l - 60) > 1: sys.exit("colourbar %.1f x %.1f pt, want 9 x 60" % (w, l))
+PY
+printf 'id\tA\tB\nr1\t0.1\t0.9\nr2\t0.6\t0.3\n' >"$tmpdir/cb_m.tsv"
+G='guides(fill=guide_colourbar(barheight=unit(60,"pt"), barwidth=unit(9,"pt")))'
+"$CINDERPLOT" "$tmpdir/cb_m.tsv + heatmap(name=\"m\", cluster=none) + legend(right_of(\"m\"), title=\"Beta\") + $G" \
+    -o "$tmpdir/cb1.svg" >/dev/null 2>&1 || { echo "heatmap colourbar guide failed" >&2; exit 1; }
+python3 "$tmpdir/cbar.py" "$tmpdir/cb1.svg"
+"$CINDERPLOT" "region(\"chr20:44617001-44653999\") + matrix(\"$here/data/region_betas_grouped.tsv\", name=\"b\", cluster=none, rownames=off, height=6) + legend(title=\"beta\") + $G" \
+    -o "$tmpdir/cb2.svg" >/dev/null 2>&1 || { echo "track colourbar guide failed" >&2; exit 1; }
+python3 "$tmpdir/cbar.py" "$tmpdir/cb2.svg"
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
