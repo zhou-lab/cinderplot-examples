@@ -4537,6 +4537,17 @@ if "$CINDERPLOT" "$tmpdir/ard.tsv + aes(x, y) + annotation_raster(\"$tmpdir/ar.p
         -o "$tmpdir/ar3.svg" 2>"$tmpdir/ar3.err"; then echo "partial extent unexpectedly succeeded" >&2; exit 1; fi
 grep -q 'needs xmin=, xmax=, ymin= and ymax=' "$tmpdir/ar3.err" || { echo "partial extent message: $(cat "$tmpdir/ar3.err")" >&2; exit 1; }
 
+# ---- C15zzzr: scale_alpha(trans="log10") ----
+# spatialqc 2.3, depth as opacity: UMIs span 10 to 10,000, so a linear alpha
+# left most spots near transparent. As the colour scales: opacity on
+# log(value) over range=, legend keys at the powers, a value <= 0 not drawn.
+printf 'x\ty\tu\n1\t1\t10\n2\t1\t100\n1\t2\t1000\n2\t2\t10000\n3\t1\t0\n' >"$tmpdir/al.tsv"
+"$CINDERPLOT" "$tmpdir/al.tsv + aes(x, y, alpha=u) + geom_tile(fill=\"#b36b12\") + scale_alpha(trans=\"log10\")" \
+    --editable-svg -o "$tmpdir/al.svg" --size 4x3 >"$tmpdir/al.err" 2>&1 || { echo "scale_alpha(trans=) failed: $(cat "$tmpdir/al.err")" >&2; exit 1; }
+ops=$(grep -o 'fill="rgb(70.196078%, 41.960784%, 7.058824%)" fill-opacity="[0-9.]*"' "$tmpdir/al.svg" | sed 's/.*fill-opacity="//; s/"//' | sort -u | tr '\n' ' ')
+[ "$ops" = "0.1 0.4 0.7 1 " ] || { echo "log alpha opacities: '$ops' (want 0.1 0.4 0.7 1)" >&2; exit 1; }
+for t in 10 100 1000 10000; do grep -q ">$t</text>" "$tmpdir/al.svg" || { echo "log alpha legend lacks $t" >&2; exit 1; }; done
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
