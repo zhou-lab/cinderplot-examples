@@ -4381,6 +4381,31 @@ done
 nb=$(grep -c 'fill="rgb(0%, 0%, 0%)"' "$tmpdir/oh.svg" || true)
 [ "$nb" -ge 27 ] || { echo "21-object heatmap: expected the bands' black cells, got $nb" >&2; exit 1; }
 
+# ---- C15zzzl: thin vertical band titles on end; bare legend() skips keyless bands ----
+# Immune5hmC Fig 2d: 18 right_of() ChromHMM bands 0.018 wide had their
+# titles laid flat above them, one smear. title.side="bottom" (or
+# title.angle=90 above) stands each on end, reading upward, centred on its
+# band (ComplexHeatmap's annotation_name_rot=90). And an unanchored
+# legend() keyed the last band even though it said show.legend=FALSE; it
+# now falls through to the heatmap's colour bar.
+printf 'id\tc1\tc2\n' >"$tmpdir/vt.tsv"; printf 'id\tS1\tS2\n' >"$tmpdir/vtb.tsv"
+printf 'id\tbr\n' >"$tmpdir/vtr.tsv"
+for r in 1 2 3 4; do
+    echo "r$r	0.$r	0.9" >>"$tmpdir/vt.tsv"
+    echo "r$r	$([ $((r % 2)) -eq 0 ] && echo yes || echo no)	no" >>"$tmpdir/vtb.tsv"
+    echo "r$r	$([ $r -le 2 ] && echo BRA || echo BRB)" >>"$tmpdir/vtr.tsv"
+done
+"$CINDERPLOT" "$tmpdir/vt.tsv + heatmap(name=\"a\", cluster=none) + annotation(\"$tmpdir/vtb.tsv\", column=\"S1\", right_of(\"a\", width=0.03, pad=0), name=\"s1\", title=\"StateOne\", title.side=\"bottom\", show.legend=FALSE) + annotation(\"$tmpdir/vtb.tsv\", column=\"S2\", right_of(\"s1\", width=0.03, pad=0), name=\"s2\", title=\"StateTwo\", title.angle=90, show.legend=FALSE) + annotation(\"$tmpdir/vtr.tsv\", column=\"br\", right_of(\"s2\", width=0.04), name=\"br\", show.legend=FALSE) + legend(title=\"5modC\")" \
+    --editable-svg -o "$tmpdir/vt.svg" --size 5x3 >"$tmpdir/vt.err" 2>&1 || { echo "vertical band titles failed: $(cat "$tmpdir/vt.err")" >&2; exit 1; }
+grep -q 'transform="matrix(0 -1 1 0[^"]*">StateOne<' "$tmpdir/vt.svg" || { echo "title.side=bottom title not on end" >&2; exit 1; }
+grep -q 'transform="matrix(0 -1 1 0[^"]*">StateTwo<' "$tmpdir/vt.svg" || { echo "title.angle=90 title not on end" >&2; exit 1; }
+if grep -q '>BRA<' "$tmpdir/vt.svg"; then echo "bare legend() keyed the show.legend=FALSE band" >&2; exit 1; fi
+grep -q '>5modC<' "$tmpdir/vt.svg" || { echo "legend title missing" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/vt.tsv + heatmap(name=\"a\") + annotation(\"$tmpdir/vtr.tsv\", column=\"br\", top_of(\"a\"), title=\"T\", title.side=\"bottom\")" \
+        -o "$tmpdir/vt2.svg" 2>"$tmpdir/vt2.err"; then
+    echo "title.side=bottom on a horizontal band unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'stand a vertical band' "$tmpdir/vt2.err" || { echo "title.side=bottom refusal lacks its reason: $(cat "$tmpdir/vt2.err")" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
