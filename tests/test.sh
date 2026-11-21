@@ -4248,6 +4248,81 @@ if not (xs[0] + 50 < xs[1] < xs[2] - 50):
     sys.exit("title x does not follow hjust 0/0.5/1: %s" % xs)
 PY
 
+# ---- C15zzze: legend rows fit their labels; set aesthetics add no key ----
+# Immune5hmC Fig 1: legend.key.size=unit(9, "pt") under 12 pt labels packed
+# the rows so each label's descenders crossed the next, and the constant-
+# colour geom_text drew an "a" in every key. ggplot2 grows a row to its
+# label, keeps a layer that SETS the keyed aesthetic out of the legend, and
+# takes show.legend=FALSE on any layer.
+printf 'x,y,lo,hi,g,t\n1,2,1.5,2.5,SCM_CD8T,\n2,3,2.5,3.5,EM2_CD8T,\n3,1,0.5,1.5,CM_CD8T,\n' >"$tmpdir/lk.csv"
+printf 'x,y,t\n1,3.4,rho\n' >"$tmpdir/lkt.csv"
+"$CINDERPLOT" "$tmpdir/lk.csv + aes(x, y, colour=g, label=t) + geom_errorbar(aes(ymin=lo, ymax=hi), show.legend=FALSE) + geom_point() + geom_text(data=\"$tmpdir/lkt.csv\", colour=\"black\") + theme_bw(base_size=12) + theme(legend.text=element_text(size=12), legend.key.size=unit(9, \"pt\"), legend.key.spacing.y=unit(2, \"pt\"))" \
+    --size 5x3 --editable-svg -o "$tmpdir/lk.svg" >/dev/null 2>&1 || { echo "legend key fit failed" >&2; exit 1; }
+python3 - "$tmpdir/lk.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+if re.search(r'>a</text>', s): sys.exit("a set-colour text layer still draws an 'a' key")
+ys = sorted(float(m.group(1)) for m in re.finditer(r'<text x="[0-9.]+" y="([0-9.]+)"[^>]*font-size="12.00"[^>]*>[A-Z0-9]+_CD8T<', s))
+if len(ys) != 3: sys.exit("expected 3 legend labels, got %s" % ys)
+if min(b - a for a, b in zip(ys, ys[1:])) < 12 * 1.1:
+    sys.exit("legend rows closer than their 12 pt labels: %s" % ys)
+PY
+
+# ---- C15zzzf: strip.background, strip.text hjust, legend.title size ----
+# Immune5hmC Fig 1: theme(strip.background=element_blank()) drops the strip
+# box, strip.text hjust=0 puts the label at the strip's left (inset by the
+# strip padding), legend.title=element_text(size=) sizes the guide title.
+"$CINDERPLOT" "$here/data/mtcars.csv + aes(wt, mpg, colour=factor(cyl)) + geom_point() + facet_wrap(~am) + labs(colour=\"CYLS\") + theme_bw() + theme(strip.background=element_blank(), strip.text=element_text(hjust=0), legend.title=element_text(size=15))" \
+    --size 6x3 --editable-svg -o "$tmpdir/sb.svg" >/dev/null 2>&1 || { echo "strip/legend.title theme failed" >&2; exit 1; }
+python3 - "$tmpdir/sb.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+if 'fill="rgb(85.1' in s or 'fill:rgb(85.098039%' in s: sys.exit("strip box still drawn")
+if not re.search(r'font-size="15.00"[^>]*>CYLS<', s): sys.exit("legend title not 15 pt")
+# hjust=0: the strip labels hug their panels' left edges (centred, the first
+# sat at x ~110 on this 432 pt canvas; left-aligned it is ~40)
+labs = [float(m.group(1)) for m in re.finditer(r'<text x="([0-9.]+)"[^>]*>([01])</text>', s)]
+if len(labs) != 2 or labs[0] > 60: sys.exit("strip labels not left-aligned: %s" % labs)
+PY
+
+# ---- C15zzzg: guide_colourbar(label.theme=element_text(size=)) ----
+# Immune5hmC Fig 1: the bar's tick labels followed legend.text (12 pt); the
+# figure wants 10 pt ticks beside 12 pt discrete keys.
+"$CINDERPLOT" "$here/data/mtcars.csv + aes(wt, mpg, colour=hp) + geom_point() + guides(colour=guide_colourbar(barheight=unit(60, \"pt\"), label.theme=element_text(size=10))) + theme_bw() + theme(legend.text=element_text(size=12))" \
+    --size 4x3 --editable-svg -o "$tmpdir/cl.svg" >/dev/null 2>&1 || { echo "colourbar label.theme failed" >&2; exit 1; }
+n10=$(grep -c 'font-size="10.00"' "$tmpdir/cl.svg" || true)
+test "$n10" -ge 3 || { echo "colourbar labels not 10 pt ($n10)" >&2; exit 1; }
+
+# ---- C15zzzh: venn set titles follow theme(strip.text=) ----
+# Immune5hmC Fig 1b: the set titles were bold at 1.33 x base with no knob.
+# The sets are the venn's facets, so strip.text size=/face= reach them.
+printf 'item\tset\nA\tS1\nB\tS1\nB\tS2\nC\tS2\n' >"$tmpdir/vn.tsv"
+"$CINDERPLOT" "venn(\"$tmpdir/vn.tsv\", item=item, set=set) + theme_minimal(base_size=12) + theme(strip.text=element_text(size=12, face=\"plain\"))" \
+    --size 4x3 --editable-svg -o "$tmpdir/vn.svg" >/dev/null 2>&1 || { echo "venn strip.text failed" >&2; exit 1; }
+grep -q 'font-size="12.00"[^>]*>S1<' "$tmpdir/vn.svg" || { echo "venn set title not 12 pt plain" >&2; exit 1; }
+if grep -q 'font-weight="bold"[^>]*>S1<' "$tmpdir/vn.svg"; then echo "venn set title still bold" >&2; exit 1; fi
+
+# ---- C15zzzi: theme(aspect.ratio=) fixes the panel box, free scales too ----
+# Immune5hmC Fig 1d/1e: tSNE panels faceted with scales="free" need a 1:1
+# plot area. coord_fixed() ties y units to x units and refuses free scales;
+# ggplot2's theme(aspect.ratio=r) sets every panel's height to r x its width.
+for r in 1 0.5; do
+    "$CINDERPLOT" "$here/data/mtcars.csv + aes(wt, mpg) + geom_point() + facet_wrap(~am, scales=\"free\") + theme_bw() + theme(aspect.ratio=$r)" \
+        --size 7.5x3.2 -o "$tmpdir/ar$r.svg" >/dev/null 2>&1 || { echo "aspect.ratio=$r failed" >&2; exit 1; }
+    python3 - "$tmpdir/ar$r.svg" "$r" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read(); r = float(sys.argv[2])
+boxes = []
+for m in re.finditer(r'<path[^>]*fill="rgb\(100%, 100%, 100%\)"[^>]*d="([^"]+)"', s):
+    v = list(map(float, re.findall(r'-?[0-9.]+', m.group(1))))
+    w, h = max(v[0::2]) - min(v[0::2]), max(v[1::2]) - min(v[1::2])
+    if w > 50: boxes.append((w, h))
+if len(boxes) != 2: sys.exit("expected 2 panels, got %s" % boxes)
+for w, h in boxes:
+    if abs(h / w - r) > 0.01: sys.exit("panel %.1f x %.1f is not aspect %s" % (w, h, r))
+PY
+done
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
