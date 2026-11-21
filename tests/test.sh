@@ -4230,6 +4230,24 @@ if not (gaps[0] < gaps[1] - 20 and gaps[2] < gaps[1] - 20):
     sys.exit("rows of short labels reserve the long labels' band: gaps %s" % gaps)
 PY
 
+# ---- C15zzzd: theme(plot.title=element_text(hjust=)) ----
+# Immune5hmC Fig 4a: hjust= on the title was refused. ggplot's default 0 puts
+# it at the panel's left edge, 0.5 centres it and 1 ends it at the right edge.
+for h in 0 0.5 1; do
+    "$CINDERPLOT" "$here/data/mtcars.csv + aes(wt, mpg) + geom_point() + labs(title=\"TTL\") + theme_bw() + theme(plot.title=element_text(size=12, hjust=$h))" \
+        --size 4x3 --editable-svg -o "$tmpdir/hj$h.svg" >/dev/null 2>&1 || { echo "plot.title hjust=$h failed" >&2; exit 1; }
+done
+python3 - "$tmpdir/hj0.svg" "$tmpdir/hj0.5.svg" "$tmpdir/hj1.svg" <<'PY'
+import re, sys
+xs = []
+for f in sys.argv[1:]:
+    m = re.search(r'<text x="([0-9.]+)"[^>]*font-size="12.00"[^>]*>TTL<', open(f).read())
+    if not m: sys.exit("no 12 pt title in %s" % f)
+    xs.append(float(m.group(1)))
+if not (xs[0] + 50 < xs[1] < xs[2] - 50):
+    sys.exit("title x does not follow hjust 0/0.5/1: %s" % xs)
+PY
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
