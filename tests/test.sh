@@ -4548,6 +4548,47 @@ ops=$(grep -o 'fill="rgb(70.196078%, 41.960784%, 7.058824%)" fill-opacity="[0-9.
 [ "$ops" = "0.1 0.4 0.7 1 " ] || { echo "log alpha opacities: '$ops' (want 0.1 0.4 0.7 1)" >&2; exit 1; }
 for t in 10 100 1000 10000; do grep -q ">$t</text>" "$tmpdir/al.svg" || { echo "log alpha legend lacks $t" >&2; exit 1; }; done
 
+# ---- C15zzzs: annotation(columns=) draws a side matrix, one band per column ----
+# Immune5hmC Fig 2d: an 18-state ChromHMM yes/no table beside the betas took
+# 18 hand-chained annotation() calls. columns=c(...) or "all" (every column
+# after the key) expands to adjacent bands sharing values= and the width,
+# each titled by its column (on end under a vertical band), and name= goes
+# to the outermost band so the next right_of(name) follows the block.
+printf 'id\tc1\tc2\n' >"$tmpdir/mc.tsv"; printf 'id\tEnhAA\tEnhBB\tTssAA\n' >"$tmpdir/mcb.tsv"; printf 'id\tbr\n' >"$tmpdir/mcr.tsv"
+for r in 1 2 3 4; do
+    echo "r$r	0.$r	0.9" >>"$tmpdir/mc.tsv"
+    echo "r$r	$([ $r -eq 1 ] && echo yes || echo no)	$([ $r -eq 2 ] && echo yes || echo no)	$([ $r -eq 3 ] && echo yes || echo no)" >>"$tmpdir/mcb.tsv"
+    echo "r$r	$([ $r -le 2 ] && echo BRA || echo BRB)" >>"$tmpdir/mcr.tsv"
+done
+for cols in '"all"' 'c("EnhAA", "EnhBB", "TssAA")'; do
+    "$CINDERPLOT" "$tmpdir/mc.tsv + heatmap(name=\"a\", cluster=none) + annotation(\"$tmpdir/mcb.tsv\", columns=$cols, right_of(\"a\", width=0.04, pad=0.01), name=\"hmm\", values=c(yes=\"#000000\", no=\"#F2F2F2\"), show.legend=FALSE) + annotation(\"$tmpdir/mcr.tsv\", column=\"br\", right_of(\"hmm\", width=0.04), show.legend=FALSE) + legend(title=\"v\")" \
+        --editable-svg -o "$tmpdir/mc.svg" --size 5x3 >"$tmpdir/mc.err" 2>&1 || { echo "annotation(columns=$cols) failed: $(cat "$tmpdir/mc.err")" >&2; exit 1; }
+    python3 - "$tmpdir/mc.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+# three rotated titles, left to right in the listed order
+xs = {}
+for m in re.finditer(r'transform="matrix\(0 -1 1 0 ([0-9.]+) [0-9.]+\)">(EnhAA|EnhBB|TssAA)<', s):
+    xs[m.group(2)] = float(m.group(1))
+if sorted(xs) != ["EnhAA", "EnhBB", "TssAA"] or not xs["EnhAA"] < xs["EnhBB"] < xs["TssAA"]:
+    sys.exit("columns= titles missing or out of order: %s" % xs)
+# one black cell per band (rows 1..3), and the branch band after the block
+if len(re.findall(r'fill="rgb\(0%, 0%, 0%\)"', s)) < 3: sys.exit("columns= bands lack their black cells")
+PY
+done
+# left_of keeps the listed order left to right
+"$CINDERPLOT" "$tmpdir/mc.tsv + heatmap(name=\"a\", cluster=none) + annotation(\"$tmpdir/mcb.tsv\", columns=c(\"TssAA\", \"EnhAA\"), left_of(\"a\", width=0.05))" \
+    --editable-svg -o "$tmpdir/mcl.svg" --size 5x3 >/dev/null 2>&1 || { echo "left_of columns= failed" >&2; exit 1; }
+python3 - "$tmpdir/mcl.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+xs = {m.group(2): float(m.group(1)) for m in re.finditer(r'transform="matrix\(0 -1 1 0 ([0-9.]+) [0-9.]+\)">(EnhAA|TssAA)<', s)}
+if not xs.get("TssAA", 1e9) < xs.get("EnhAA", -1): sys.exit("left_of columns= not in listed order: %s" % xs)
+PY
+if "$CINDERPLOT" "$tmpdir/mc.tsv + heatmap(name=\"a\") + annotation(\"$tmpdir/mcb.tsv\", columns=c(\"EnhAA\"), column=\"TssAA\", top_of(\"a\"))" -o "$tmpdir/mcx.svg" 2>"$tmpdir/mcx.err"; then
+    echo "column= with columns= unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'not both' "$tmpdir/mcx.err" || { echo "columns= refusal: $(cat "$tmpdir/mcx.err")" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
