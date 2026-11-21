@@ -4327,8 +4327,9 @@ done
 # Immune5hmC track panels: 28k signal(style="bars") rects and a 4k-curve
 # leader fan kept the SVGs at 2-7 MB. raster=TRUE paints them into embedded
 # 300 dpi images (auto past 2000 rows / leaders, as matrix() cells), with
-# the frames, baselines, axes and text left vector; raster=FALSE forces
-# vector.
+# the frame, axes and text left vector; raster=FALSE forces vector. A
+# track's strips and baselines go into one image per window (27 strips x 11
+# windows made 297 images before).
 printf 'chrom\tbeg\tend\tvalue\tsample\tseries\n' >"$tmpdir/rs.tsv"
 for smp in A B; do
     printf 'chr1\t100\t102\t0.9\t%s\tother\nchr1\t500\t502\t0.5\t%s\tfocal\n' "$smp" "$smp" >>"$tmpdir/rs.tsv"
@@ -4336,7 +4337,8 @@ done
 "$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/rs.tsv\", style=\"bars\", ylim=c(0, 1), raster=TRUE, colour=c(focal=\"#ff0000\", other=\"#0000ff\"))" \
     -o "$tmpdir/rs.svg" --size 4x3 >/dev/null 2>&1 || { echo "signal(raster=TRUE) failed" >&2; exit 1; }
 [ "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/rs.svg")" -eq 0 ] || { echo "signal(raster=TRUE) still drew vector bars" >&2; exit 1; }
-[ "$(grep -c '<image' "$tmpdir/rs.svg")" -ge 1 ] || { echo "signal(raster=TRUE) embedded no image" >&2; exit 1; }
+# both strips (samples A and B) and their baselines are ONE image per track
+[ "$(grep -c '<image' "$tmpdir/rs.svg")" -eq 1 ] || { echo "signal(raster=TRUE): want one image for the 2-strip track, got $(grep -c '<image' "$tmpdir/rs.svg")" >&2; exit 1; }
 "$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/rs.tsv\", style=\"bars\", raster=TRUE)" \
     --editable-svg -o "$tmpdir/rst.svg" --size 4x3 >/dev/null 2>&1
 grep -q '>A<' "$tmpdir/rst.svg" || { echo "signal(raster=TRUE) lost its vector row labels" >&2; exit 1; }
