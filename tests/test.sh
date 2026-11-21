@@ -4430,6 +4430,38 @@ if "$CINDERPLOT" "$tmpdir/nd.tsv + aes(x, y, label=txt) + geom_point() + geom_te
         -o "$tmpdir/nd3.svg" 2>"$tmpdir/nd.err"; then echo "nudge_x length mismatch unexpectedly succeeded" >&2; exit 1; fi
 grep -q 'has 3 values; its data has 2 rows' "$tmpdir/nd.err" || { echo "nudge length refusal: $(cat "$tmpdir/nd.err")" >&2; exit 1; }
 
+# ---- C15zzzn: scale_y_reverse() / scale_x_reverse() / trans="reverse" ----
+# spatialqc grid maps put y = 1 at the top, as the barcode grid and tissue
+# image do; the workaround plotted -y with relabelled breaks. ggplot2's
+# reverse_trans: the same range read high to low, limits=c(hi, lo) taken.
+printf 'x\ty\tv\n1\t1\t10\n2\t1\t100\n1\t2\t5\n2\t2\t1000\n1\t10\t3\n' >"$tmpdir/rv.tsv"
+i=0
+for sc in "" " + scale_y_reverse()" " + scale_y_continuous(trans=\"reverse\")" " + scale_y_reverse(limits=c(12, 0))" " + scale_x_reverse()"; do
+    "$CINDERPLOT" "$tmpdir/rv.tsv + aes(x, y, fill=v) + geom_tile()$sc" --editable-svg -o "$tmpdir/rv$i.svg" --size 3x3 >/dev/null 2>&1 \
+        || { echo "reverse scale '$sc' failed" >&2; exit 1; }
+    i=$((i + 1))
+done
+python3 - "$tmpdir" <<'PY'
+import re, sys, glob, os
+d = sys.argv[1]
+def ticks(n):
+    s = open(os.path.join(d, "rv%d.svg" % n)).read()
+    return {t: (float(x), float(y)) for x, y, t in re.findall(r'<text x="([0-9.]+)" y="([0-9.]+)"[^>]*>([0-9.]+)</text>', s)}
+base, rev, tr, lim = ticks(0), ticks(1), ticks(2), ticks(3)
+# the y ticks 2.5 and 5.0: below each other normally, 2.5 ABOVE 5.0 reversed
+if not base["2.5"][1] > base["5.0"][1]: sys.exit("baseline y ticks out of order")
+if not rev["2.5"][1] < rev["5.0"][1]: sys.exit("scale_y_reverse(): 2.5 not above 5.0")
+if tr["2.5"] != rev["2.5"]: sys.exit("trans=\"reverse\" differs from scale_y_reverse()")
+# limits=c(12, 0): the axis reaches 0 at the top
+if "0.0" not in lim or not lim["0.0"][1] < lim["2.5"][1]: sys.exit("limits=c(12, 0) not applied: %s" % lim)
+xr = ticks(4)
+if not xr["1.25"][0] > xr["1.75"][0]: sys.exit("scale_x_reverse(): 1.25 not right of 1.75")
+PY
+printf 'g\ty\na\t1\nb\t2\n' >"$tmpdir/rvd.tsv"
+if "$CINDERPLOT" "$tmpdir/rvd.tsv + aes(g, y) + geom_col() + scale_x_reverse()" -o "$tmpdir/rvd.svg" 2>"$tmpdir/rvd.err"; then
+    echo "scale_x_reverse() on a discrete x unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'is a continuous scale' "$tmpdir/rvd.err" || { echo "discrete reverse refusal: $(cat "$tmpdir/rvd.err")" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
