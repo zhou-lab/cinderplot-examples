@@ -4357,6 +4357,30 @@ pt=$(grep -c '<path' "$tmpdir/mfTRUE.svg"); pf=$(grep -c '<path' "$tmpdir/mfFALS
 it=$(grep -c '<image' "$tmpdir/mfTRUE.svg"); if_=$(grep -c '<image' "$tmpdir/mfFALSE.svg")
 [ "$it" -gt "$if_" ] && [ "$pt" -lt "$pf" ] || { echo "matrix(raster=TRUE) fan not rastered: paths $pt vs $pf, images $it vs $if_" >&2; exit 1; }
 
+# ---- C15zzzk: a heatmap with 20 side bands (one-hot matrix) ----
+# Immune5hmC Fig 2d: an 18-state ChromHMM yes/no matrix beside the betas
+# is one annotation() band per state, 21 objects in all; the cap was 16
+# ("too many heatmap objects"). It is 32 now, and show.legend=FALSE on a
+# heatmap band (which only legend() keys anyway) is accepted, not refused.
+printf 'id\tc1\tc2\tc3\n' >"$tmpdir/oh.tsv"; printf 'id' >"$tmpdir/ohb.tsv"
+for k in $(seq 1 20); do printf '\tS%d' $k >>"$tmpdir/ohb.tsv"; done; echo >>"$tmpdir/ohb.tsv"
+for r in 1 2 3 4; do
+    echo "r$r	0.$r	0.5	0.9" >>"$tmpdir/oh.tsv"
+    printf 'r%d' $r >>"$tmpdir/ohb.tsv"
+    for k in $(seq 1 20); do [ $(( (r + k) % 3 )) -eq 0 ] && printf '\tyes' || printf '\tno'; done >>"$tmpdir/ohb.tsv"
+    echo >>"$tmpdir/ohb.tsv"
+done
+spec="$tmpdir/oh.tsv + heatmap(name=\"a\", cluster=none)"; prev=a
+for k in $(seq 1 20); do
+    spec="$spec + annotation(\"$tmpdir/ohb.tsv\", column=\"S$k\", right_of(\"$prev\", width=0.02, pad=0), name=\"b$k\", values=c(yes=\"#000000\", no=\"#F2F2F2\"), show.legend=FALSE)"
+    prev=b$k
+done
+"$CINDERPLOT" "$spec + legend(title=\"v\")" --editable-svg -o "$tmpdir/oh.svg" --size 6x3 >"$tmpdir/oh.err" 2>&1 \
+    || { echo "21-object heatmap failed: $(cat "$tmpdir/oh.err")" >&2; exit 1; }
+# every band drew: 20 bands x 4 rows, 27 black cells, where (r+k) %% 3 == 0
+nb=$(grep -c 'fill="rgb(0%, 0%, 0%)"' "$tmpdir/oh.svg" || true)
+[ "$nb" -ge 27 ] || { echo "21-object heatmap: expected the bands' black cells, got $nb" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
