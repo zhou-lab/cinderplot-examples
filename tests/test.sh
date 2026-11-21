@@ -4406,6 +4406,30 @@ if "$CINDERPLOT" "$tmpdir/vt.tsv + heatmap(name=\"a\") + annotation(\"$tmpdir/vt
     echo "title.side=bottom on a horizontal band unexpectedly succeeded" >&2; exit 1; fi
 grep -q 'stand a vertical band' "$tmpdir/vt2.err" || { echo "title.side=bottom refusal lacks its reason: $(cat "$tmpdir/vt2.err")" >&2; exit 1; }
 
+# ---- C15zzzm: nudge_x=c(...)/nudge_y=c(...), one offset per data row ----
+# Immune5hmC Fig 1e: the faceted axis labels "CM" and "EMRA" sat on the
+# arrow and on points, and one constant nudge cannot move two labels apart.
+# ggplot2 takes a vector, one offset per row of the layer's data.
+printf 'x\ty\tp\ttxt\n1\t1\tA\t\n2\t2\tA\t\n1\t1\tB\t\n2\t2\tB\t\n' >"$tmpdir/nd.tsv"
+printf 'x\ty\tp\ttxt\n1\t1\tA\tCMX\n2\t2\tB\tEMRAX\n' >"$tmpdir/ndl.tsv"
+for n in "" ", nudge_x=c(0.3, -0.3), nudge_y=c(0, 0.2)"; do
+    "$CINDERPLOT" "$tmpdir/nd.tsv + aes(x, y, label=txt) + geom_point() + geom_text(data=\"$tmpdir/ndl.tsv\"$n) + facet_wrap(~p)" \
+        --editable-svg -o "$tmpdir/nd${#n}.svg" --size 4x2 >/dev/null 2>&1 || { echo "nudge vector failed" >&2; exit 1; }
+done
+python3 - "$tmpdir/nd0.svg" "$tmpdir"/nd[1-9]*.svg <<'PY'
+import re, sys
+def pos(f, lab):
+    m = re.search(r'<text x="([0-9.]+)" y="([0-9.]+)"[^>]*>%s<' % lab, open(f).read())
+    return float(m.group(1)), float(m.group(2))
+a0, a1 = pos(sys.argv[1], "CMX"), pos(sys.argv[2], "CMX")
+b0, b1 = pos(sys.argv[1], "EMRAX"), pos(sys.argv[2], "EMRAX")
+if not (a1[0] > a0[0] + 10 and abs(a1[1] - a0[1]) < 0.5): sys.exit("CMX not nudged right only: %s -> %s" % (a0, a1))
+if not (b1[0] < b0[0] - 10 and b1[1] < b0[1] - 5): sys.exit("EMRAX not nudged left and up: %s -> %s" % (b0, b1))
+PY
+if "$CINDERPLOT" "$tmpdir/nd.tsv + aes(x, y, label=txt) + geom_point() + geom_text(data=\"$tmpdir/ndl.tsv\", nudge_x=c(1, 2, 3))" \
+        -o "$tmpdir/nd3.svg" 2>"$tmpdir/nd.err"; then echo "nudge_x length mismatch unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'has 3 values; its data has 2 rows' "$tmpdir/nd.err" || { echo "nudge length refusal: $(cat "$tmpdir/nd.err")" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
