@@ -4323,6 +4323,38 @@ for w, h in boxes:
 PY
 done
 
+# ---- C15zzzj: raster= on signal() marks and the matrix() leader fan ----
+# Immune5hmC track panels: 28k signal(style="bars") rects and a 4k-curve
+# leader fan kept the SVGs at 2-7 MB. raster=TRUE paints them into embedded
+# 300 dpi images (auto past 2000 rows / leaders, as matrix() cells), with
+# the frames, baselines, axes and text left vector; raster=FALSE forces
+# vector.
+printf 'chrom\tbeg\tend\tvalue\tsample\tseries\n' >"$tmpdir/rs.tsv"
+for smp in A B; do
+    printf 'chr1\t100\t102\t0.9\t%s\tother\nchr1\t500\t502\t0.5\t%s\tfocal\n' "$smp" "$smp" >>"$tmpdir/rs.tsv"
+done
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/rs.tsv\", style=\"bars\", ylim=c(0, 1), raster=TRUE, colour=c(focal=\"#ff0000\", other=\"#0000ff\"))" \
+    -o "$tmpdir/rs.svg" --size 4x3 >/dev/null 2>&1 || { echo "signal(raster=TRUE) failed" >&2; exit 1; }
+[ "$(grep -c 'fill="rgb(100%, 0%, 0%)"' "$tmpdir/rs.svg")" -eq 0 ] || { echo "signal(raster=TRUE) still drew vector bars" >&2; exit 1; }
+[ "$(grep -c '<image' "$tmpdir/rs.svg")" -ge 1 ] || { echo "signal(raster=TRUE) embedded no image" >&2; exit 1; }
+"$CINDERPLOT" "region(\"chr1:0-1000\") + signal(\"$tmpdir/rs.tsv\", style=\"bars\", raster=TRUE)" \
+    --editable-svg -o "$tmpdir/rst.svg" --size 4x3 >/dev/null 2>&1
+grep -q '>A<' "$tmpdir/rst.svg" || { echo "signal(raster=TRUE) lost its vector row labels" >&2; exit 1; }
+# auto: 2100 rows raster by default, and raster=FALSE keeps them vector
+awk 'BEGIN{print "chrom\tbeg\tend\tvalue\tsample\tseries"; for(i=0;i<2100;i++) printf "chr1\t%d\t%d\t0.5\tA\tother\n", i*4, i*4+2}' >"$tmpdir/rb.tsv"
+"$CINDERPLOT" "region(\"chr1:0-8400\") + signal(\"$tmpdir/rb.tsv\", style=\"bars\", ylim=c(0, 1))" -o "$tmpdir/rb.svg" --size 4x2 >/dev/null 2>&1
+"$CINDERPLOT" "region(\"chr1:0-8400\") + signal(\"$tmpdir/rb.tsv\", style=\"bars\", ylim=c(0, 1), raster=FALSE)" -o "$tmpdir/rbv.svg" --size 4x2 >/dev/null 2>&1
+[ "$(grep -c '<image' "$tmpdir/rb.svg")" -ge 1 ] || { echo "2100-row signal not rastered by default" >&2; exit 1; }
+[ "$(grep -c '<image' "$tmpdir/rbv.svg")" -eq 0 ] || { echo "signal(raster=FALSE) still rastered" >&2; exit 1; }
+# the leader fan joins the matrix's raster=TRUE
+for r in TRUE FALSE; do
+    "$CINDERPLOT" "region(\"chr20:44617001-44653999\") + matrix(\"$here/data/region_betas_grouped.tsv\", cluster=none, raster=$r)" \
+        -o "$tmpdir/mf$r.svg" --size 6x4 >/dev/null 2>&1 || { echo "matrix(raster=$r) failed" >&2; exit 1; }
+done
+pt=$(grep -c '<path' "$tmpdir/mfTRUE.svg"); pf=$(grep -c '<path' "$tmpdir/mfFALSE.svg")
+it=$(grep -c '<image' "$tmpdir/mfTRUE.svg"); if_=$(grep -c '<image' "$tmpdir/mfFALSE.svg")
+[ "$it" -gt "$if_" ] && [ "$pt" -lt "$pf" ] || { echo "matrix(raster=TRUE) fan not rastered: paths $pt vs $pf, images $it vs $if_" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
