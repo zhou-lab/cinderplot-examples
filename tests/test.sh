@@ -4502,6 +4502,41 @@ PY
     --no-legend -o "$tmpdir/lgn.svg" >/dev/null 2>&1
 grep -q 'fill="rgb(7.058824%, 20.392157%, 33.72549%)"' "$tmpdir/lgn.svg" || { echo "log fill: the 0 count not painted na.value" >&2; exit 1; }
 
+# ---- C15zzzq: annotation_raster() under the data layers ----
+# spatialqc 2.3: spot maps on the tissue photo (Seurat's SpatialFeaturePlot;
+# matplotlib imshow(extent=) today). ggplot2's annotation_raster(): the PNG
+# at xmin..xmax/ymin..ymax (-Inf/Inf = the panel edge), upright, over the
+# grid and under every layer; greyscale=/alpha= grey the photo under the
+# coloured spots.
+python3 - "$tmpdir/ar.png" <<'PY'
+import sys, zlib, struct
+rows = [bytes([255, 0, 0, 0, 255, 0]), bytes([0, 0, 255, 255, 255, 255])]
+raw = b"".join(b"\x00" + r for r in rows)
+def ch(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+open(sys.argv[1], "wb").write(b"\x89PNG\r\n\x1a\n" + ch(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0))
+                              + ch(b"IDAT", zlib.compress(raw)) + ch(b"IEND", b""))
+PY
+printf 'x\ty\tv\n1\t1\t10\n2\t1\t100\n1\t2\t5\n2\t2\t1000\n' >"$tmpdir/ard.tsv"
+for opt in "xmin=0.5, xmax=2.5, ymin=0.5, ymax=2.5" "xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf, greyscale=TRUE, alpha=0.5, interpolate=TRUE"; do
+    "$CINDERPLOT" "$tmpdir/ard.tsv + aes(x, y, colour=v) + annotation_raster(\"$tmpdir/ar.png\", $opt) + geom_point(size=3) + scale_y_reverse()" \
+        -o "$tmpdir/ar.svg" --size 4x3 >"$tmpdir/ar.err" 2>&1 || { echo "annotation_raster($opt) failed: $(cat "$tmpdir/ar.err")" >&2; exit 1; }
+    python3 - "$tmpdir/ar.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+im = s.find("<image")
+if im < 0: sys.exit("annotation_raster: no <image> in the SVG")
+# the points (four filled circles of the colourbar's blues) come after it
+pts = [m.start() for m in re.finditer(r'<path[^>]*d="M [0-9.]+ [0-9.]+ C ', s)]
+if not pts or min(pts) < im: sys.exit("annotation_raster: the image is not under the points")
+PY
+done
+if "$CINDERPLOT" "$tmpdir/ard.tsv + aes(x, y) + annotation_raster(\"$tmpdir/none.png\", xmin=0, xmax=1, ymin=0, ymax=1) + geom_point()" \
+        -o "$tmpdir/ar2.svg" 2>"$tmpdir/ar2.err"; then echo "missing PNG unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'cannot read' "$tmpdir/ar2.err" || { echo "missing PNG message: $(cat "$tmpdir/ar2.err")" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/ard.tsv + aes(x, y) + annotation_raster(\"$tmpdir/ar.png\", xmin=0, xmax=1) + geom_point()" \
+        -o "$tmpdir/ar3.svg" 2>"$tmpdir/ar3.err"; then echo "partial extent unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'needs xmin=, xmax=, ymin= and ymax=' "$tmpdir/ar3.err" || { echo "partial extent message: $(cat "$tmpdir/ar3.err")" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
