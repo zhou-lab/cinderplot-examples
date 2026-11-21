@@ -4462,6 +4462,46 @@ if "$CINDERPLOT" "$tmpdir/rvd.tsv + aes(g, y) + geom_col() + scale_x_reverse()" 
     echo "scale_x_reverse() on a discrete x unexpectedly succeeded" >&2; exit 1; fi
 grep -q 'is a continuous scale' "$tmpdir/rvd.err" || { echo "discrete reverse refusal: $(cat "$tmpdir/rvd.err")" >&2; exit 1; }
 
+# ---- C15zzzo: scale_fill_gradientn(colours=c(...)[, values=c(...)]) ----
+# spatialqc depth maps use custom three-stop ramps; ggplot2's gradientn
+# spreads n colours evenly over the range, or at values= (0..1).
+printf 'x\ty\tv\n1\t1\t0\n2\t1\t0.5\n3\t1\t1\n' >"$tmpdir/gn.tsv"
+"$CINDERPLOT" "$tmpdir/gn.tsv + aes(x, y, fill=v) + geom_tile() + scale_fill_gradientn(colours=c(\"#000033\",\"#2255aa\",\"#faf9cf\"))" \
+    --no-legend -o "$tmpdir/gn.svg" >/dev/null 2>&1 || { echo "gradientn failed" >&2; exit 1; }
+for c in 'rgb(0%, 0%, 20%)' 'rgb(13.333333%, 33.333333%, 66.666667%)' 'rgb(98.039216%, 97.647059%, 81.176471%)'; do
+    grep -q "fill=\"$c\"" "$tmpdir/gn.svg" || { echo "gradientn: stop $c not painted at its value" >&2; exit 1; }
+done
+"$CINDERPLOT" "$tmpdir/gn.tsv + aes(x, y, fill=v) + geom_tile() + scale_fill_gradientn(colours=c(\"#000000\",\"#ff0000\",\"#ffffff\"), values=c(0, 0.8, 1))" \
+    --no-legend -o "$tmpdir/gnv.svg" >/dev/null 2>&1 || { echo "gradientn values= failed" >&2; exit 1; }
+# 0.5 sits 0.5/0.8 of the way from black to red
+grep -q 'fill="rgb(62.5%, 0%, 0%)"' "$tmpdir/gnv.svg" || { echo "gradientn values= stop positions ignored" >&2; exit 1; }
+if "$CINDERPLOT" "$tmpdir/gn.tsv + aes(x, y, fill=v) + geom_tile() + scale_fill_gradientn(colours=c(\"red\"))" -o "$tmpdir/gn1.svg" 2>"$tmpdir/gn.err"; then
+    echo "one-colour gradientn unexpectedly succeeded" >&2; exit 1; fi
+grep -q 'at least two colours' "$tmpdir/gn.err" || { echo "gradientn refusal: $(cat "$tmpdir/gn.err")" >&2; exit 1; }
+
+# ---- C15zzzp: trans="log10" on continuous fill/colour scales ----
+# spatialqc per-spot depth maps colour counts on a log scale with count
+# labels (matplotlib LogNorm). ggplot2: colour by log10(value), colourbar
+# ticks at the powers labelled in counts, a value <= 0 takes na.value.
+printf 'x\ty\tv\n1\t1\t10\n2\t1\t100\n1\t2\t5\n2\t2\t1000\n3\t1\t0\n3\t2\t1\n' >"$tmpdir/lg.tsv"
+for sc in 'scale_fill_viridis(trans="log10", na.value="grey80")' 'scale_fill_distiller(palette="Spectral", trans="log10")' 'scale_fill_gradient(trans="log10")'; do
+    "$CINDERPLOT" "$tmpdir/lg.tsv + aes(x, y, fill=v) + geom_tile() + $sc" --editable-svg -o "$tmpdir/lg.svg" --size 4x3 >"$tmpdir/lg.err" 2>&1 \
+        || { echo "$sc failed: $(cat "$tmpdir/lg.err")" >&2; exit 1; }
+    for t in 1 10 100 1000; do
+        grep -q ">$t</text>" "$tmpdir/lg.svg" || { echo "$sc: no colourbar tick $t" >&2; exit 1; }
+    done
+done
+python3 - "$tmpdir/lg.svg" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+y = {t: float(v) for v, t in re.findall(r'<text x="[0-9.]+" y="([0-9.]+)"[^>]*>(1|10|100|1000)</text>', s)}
+d = [y["1"] - y["10"], y["10"] - y["100"], y["100"] - y["1000"]]
+if max(d) - min(d) > 0.6: sys.exit("log colourbar ticks not evenly spaced: %s" % d)
+PY
+"$CINDERPLOT" "$tmpdir/lg.tsv + aes(x, y, fill=v) + geom_tile() + scale_fill_viridis(trans=\"log10\", na.value=\"#123456\")" \
+    --no-legend -o "$tmpdir/lgn.svg" >/dev/null 2>&1
+grep -q 'fill="rgb(7.058824%, 20.392157%, 33.72549%)"' "$tmpdir/lgn.svg" || { echo "log fill: the 0 count not painted na.value" >&2; exit 1; }
+
 # ---- C16: geom_errorbar() default cap is 0.9 x the x resolution ----
 # with x = 0.1, 0.2, 0.3 the old 0.25-unit default ran the caps edge to edge
 # and through the neighbouring bars; a cap is now narrower than the x spacing
